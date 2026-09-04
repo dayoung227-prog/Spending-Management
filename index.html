@@ -133,8 +133,8 @@ body{
 .btn{padding:9px 16px;border-radius:8px;border:1px solid var(--brown-deep);background:var(--brown-deep);color:#fff;font-size:13px;cursor:pointer;font-weight:600;flex:1;}
 .btn.ghost{background:none;color:var(--brown-deep);}
 
-/* fab + tabbar */
-.fab{position:absolute;right:16px;bottom:82px;width:52px;height:52px;border-radius:50%;background:var(--gold);color:var(--brown-deep);border:none;font-size:26px;font-weight:700;box-shadow:0 3px 10px rgba(43,35,28,0.3);cursor:pointer;z-index:5;}
+/* top add button + tabbar */
+.add-btn-top{background:var(--gold);color:var(--brown-deep);border:none;width:30px;height:30px;border-radius:50%;font-size:17px;font-weight:700;cursor:pointer;flex-shrink:0;line-height:1;}
 .tabbar{background:var(--brown-deep);display:flex;flex-shrink:0;}
 .tab{flex:1;background:none;border:none;color:#B7AA92;padding:10px 0 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;}
 .tab.active{color:#F3EDE0;}
@@ -167,6 +167,7 @@ body{
         <button onclick="changeMonth(-1)">‹</button>
         <span id="monthLabel"></span>
         <button onclick="changeMonth(1)">›</button>
+        <button class="add-btn-top" onclick="openSheet()">＋</button>
       </div>
     </div>
     <div class="summary-strip">
@@ -202,8 +203,6 @@ body{
       </div>
     </div>
   </div>
-
-  <button class="fab" onclick="openSheet()">＋</button>
 
   <div class="tabbar">
     <button class="tab active" data-tab="list" onclick="switchView('list')"><span class="ic">📋</span>내역</button>
@@ -311,7 +310,6 @@ function switchView(v){
     document.getElementById('view'+name.charAt(0).toUpperCase()+name.slice(1)).style.display = name===v ? 'block' : 'none';
   });
   document.querySelectorAll('.tab').forEach(t=> t.classList.toggle('active', t.dataset.tab===v));
-  document.querySelector('.fab').style.display = v==='list' ? 'block' : 'none';
   render();
 }
 
