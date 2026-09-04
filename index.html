@@ -201,13 +201,13 @@ body{
   <div class="content" id="viewSettings" style="display:none;">
     <div class="settings-section">
       <div class="settings-card">
-        <h4>동기화 코드</h4>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <input type="text" id="syncCodeDisplay" readonly style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--paper);">
-          <button class="cm-icon-btn" onclick="copySyncCode()">📋</button>
+        <h4>데이터 백업</h4>
+        <div style="font-size:11px;color:var(--ink-soft);margin-bottom:10px;line-height:1.5;">이 앱은 이 폰(브라우저)에만 데이터가 저장돼요. 가끔 내보내기로 파일을 저장해두면 안전해요.</div>
+        <div class="settings-btn-row">
+          <button class="btn ghost" onclick="exportData()">내보내기</button>
+          <button class="btn ghost" onclick="document.getElementById('importFile').click()">가져오기</button>
         </div>
-        <div style="font-size:11px;color:var(--ink-soft);margin-top:8px;line-height:1.5;">이 코드를 메모해두세요. 다른 기기에서 이 앱을 열 때 이 코드를 입력하면 같은 데이터를 볼 수 있어요.</div>
-        <button class="btn ghost" style="width:100%;margin-top:10px;" onclick="switchSyncCode()">다른 코드로 전환</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
       </div>
       <div class="settings-card">
         <h4>카테고리 및 예산</h4>
@@ -254,22 +254,8 @@ body{
     </div>
   </div>
 
-  <div class="sheet-overlay" id="syncOverlay">
-    <div class="sheet" style="text-align:center;">
-      <div class="sheet-handle"></div>
-      <h3>동기화 코드</h3>
-      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin-bottom:14px;text-align:left;">
-        나만의 동기화 코드를 정해주세요. 이 코드로 클라우드에 데이터가 저장되고,
-        나중에 이 코드를 입력하면 어느 기기에서든 다시 불러올 수 있어요.<br><b>잊지 않게 꼭 메모해두세요.</b>
-      </p>
-      <input type="text" id="syncCodeInput" placeholder="예: dayoung-expense-2026" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:14px;text-align:center;box-sizing:border-box;">
-      <button class="btn" id="syncSubmitBtn" style="width:100%;">시작하기</button>
-    </div>
-  </div>
-
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const DEFAULT_CATEGORIES = [
   {name:'식비',    color:'#D9822B', icon:'🍙'},
@@ -285,14 +271,9 @@ const DEFAULT_CATEGORIES = [
   {name:'기타',    color:'#7A7267', icon:'✳️'},
 ];
 let CATEGORIES = [];
-const CACHE_KEY = 'gagyebu:cache';
-const SYNC_CODE_KEY = 'gagyebu:synccode';
-
-// ⚠️ Supabase 프로젝트 만든 뒤 아래 두 값을 본인 값으로 바꿔주세요.
-const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
-let supabaseClient = null;
-let syncCode = null;
+const EXP_KEY = 'gagyebu:expenses';
+const BUDGET_KEY = 'gagyebu:budgets';
+const CATEGORY_KEY = 'gagyebu:categories';
 
 let state = {
   expenses: [],
@@ -320,138 +301,65 @@ function addMonthsClamped(dateStr, months){
   return dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
 }
 
-function initSupabase(){
-  if(!supabaseClient && window.supabase){
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  }
-  return supabaseClient;
-}
-
-function promptSyncCode(){
-  return new Promise((resolve)=>{
-    document.getElementById('syncOverlay').classList.add('show');
-    document.getElementById('syncSubmitBtn').onclick = ()=>{
-      const v = document.getElementById('syncCodeInput').value.trim();
-      if(!v){ alert('코드를 입력해주세요.'); return; }
-      document.getElementById('syncOverlay').classList.remove('show');
-      resolve(v);
-    };
-  });
-}
-
-async function ensureSyncCode(){
-  let code = localStorage.getItem(SYNC_CODE_KEY);
-  if(code) return code;
-  code = await promptSyncCode();
-  localStorage.setItem(SYNC_CODE_KEY, code);
-  return code;
-}
-
-function loadLocalCache(){
+function loadData(){
   try{
-    const c = localStorage.getItem(CACHE_KEY);
-    return c ? JSON.parse(c) : null;
-  }catch(e){ return null; }
-}
-function saveLocalCache(payload){
-  try{ localStorage.setItem(CACHE_KEY, JSON.stringify(payload)); }catch(e){}
-}
-
-async function fetchFromCloud(retryCount){
-  retryCount = retryCount || 0;
-  try{
-    const res = await supabaseClient
-      .from('gagyebu_data')
-      .select('payload')
-      .eq('sync_code', syncCode)
-      .maybeSingle();
-    if(res.error && retryCount < 2){
-      await new Promise(r=>setTimeout(r, 800 * (retryCount+1)));
-      return fetchFromCloud(retryCount+1);
-    }
-    return res;
+    const rc = localStorage.getItem(CATEGORY_KEY);
+    const loaded = rc ? JSON.parse(rc) : null;
+    CATEGORIES.push(...(loaded && loaded.length ? loaded : JSON.parse(JSON.stringify(DEFAULT_CATEGORIES))));
   }catch(e){
-    if(retryCount < 2){
-      await new Promise(r=>setTimeout(r, 800 * (retryCount+1)));
-      return fetchFromCloud(retryCount+1);
-    }
-    throw e;
+    CATEGORIES.push(...JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)));
   }
-}
-
-async function loadData(){
-  initSupabase();
-  syncCode = await ensureSyncCode();
-  document.getElementById('fDate').value = todayStr();
-
-  try{
-    const { data, error } = await fetchFromCloud();
-    if(error) throw error;
-
-    if(data && data.payload){
-      const p = data.payload;
-      CATEGORIES.push(...(p.categories && p.categories.length ? p.categories : JSON.parse(JSON.stringify(DEFAULT_CATEGORIES))));
-      state.expenses = p.expenses || [];
-      state.budgets = p.budgets || {};
-    } else {
-      CATEGORIES.push(...JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)));
-      state.expenses = [];
-      state.budgets = {};
-      await pushToCloud();
-    }
-    saveLocalCache({expenses:state.expenses, budgets:state.budgets, categories:CATEGORIES});
-  }catch(e){
-    console.error(e);
-    const cached = loadLocalCache();
-    if(cached){
-      CATEGORIES.push(...(cached.categories && cached.categories.length ? cached.categories : JSON.parse(JSON.stringify(DEFAULT_CATEGORIES))));
-      state.expenses = cached.expenses || [];
-      state.budgets = cached.budgets || {};
-      alert('클라우드 연결에 실패해서 마지막으로 저장된 데이터를 불러왔어요. 인터넷 연결을 확인해주세요.');
-    } else {
-      CATEGORIES.push(...JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)));
-      alert('클라우드 연결에 실패했어요. 인터넷 연결을 확인하고 새로고침해주세요.');
-    }
-  }
-
+  try{ const r = localStorage.getItem(EXP_KEY); state.expenses = r ? JSON.parse(r) : []; }
+  catch(e){ state.expenses = []; }
+  try{ const r2 = localStorage.getItem(BUDGET_KEY); state.budgets = r2 ? JSON.parse(r2) : {}; }
+  catch(e){ state.budgets = {}; }
   state.selectedFormCategory = CATEGORIES[0] ? CATEGORIES[0].name : '';
-  const disp = document.getElementById('syncCodeDisplay');
-  if(disp) disp.value = syncCode;
+  document.getElementById('fDate').value = todayStr();
   render();
 }
-
-async function pushToCloud(retryCount){
-  retryCount = retryCount || 0;
-  const payload = { expenses: state.expenses, budgets: state.budgets, categories: CATEGORIES };
-  saveLocalCache(payload);
-  try{
-    const { error } = await supabaseClient
-      .from('gagyebu_data')
-      .upsert({ sync_code: syncCode, payload, updated_at: new Date().toISOString() }, { onConflict: 'sync_code' });
-    if(error) throw error;
-  }catch(e){
-    console.error(e);
-    if(retryCount < 2){
-      await new Promise(r=>setTimeout(r, 800 * (retryCount+1)));
-      return pushToCloud(retryCount+1);
-    }
-    alert('클라우드 저장에 실패했어요. 인터넷 연결을 확인해주세요. (이 기기에는 임시로 저장됐어요)');
-  }
+function saveExpenses(){
+  try{ localStorage.setItem(EXP_KEY, JSON.stringify(state.expenses)); }
+  catch(e){ alert('저장에 실패했어요. 다시 시도해주세요.'); }
 }
-function saveExpenses(){ pushToCloud(); }
-function saveBudgetsToStorage(){ pushToCloud(); }
-function saveCategories(){ pushToCloud(); }
-
-function copySyncCode(){
-  if(navigator.clipboard) navigator.clipboard.writeText(syncCode).catch(()=>{});
-  const el = document.getElementById('syncCodeDisplay');
-  if(el){ el.select(); }
-  alert('동기화 코드를 복사했어요. 잘 보관해주세요.');
+function saveBudgetsToStorage(){
+  try{ localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budgets)); }
+  catch(e){ alert('예산 저장에 실패했어요.'); }
 }
-async function switchSyncCode(){
-  if(!confirm('다른 동기화 코드로 전환할까요? 지금 화면의 데이터는 클라우드에 그대로 남아있어요.')) return;
-  localStorage.removeItem(SYNC_CODE_KEY);
-  location.reload();
+function saveCategories(){
+  try{ localStorage.setItem(CATEGORY_KEY, JSON.stringify(CATEGORIES)); }
+  catch(e){ alert('카테고리 저장에 실패했어요.'); }
+}
+
+function exportData(){
+  const blob = new Blob([JSON.stringify({expenses:state.expenses, budgets:state.budgets, categories:CATEGORIES}, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `지출관리_백업_${todayStr()}.json`;
+  a.click();
+}
+function importData(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+      if(!confirm('현재 데이터를 덮어씁니다. 계속할까요?')) return;
+      state.expenses = data.expenses || [];
+      state.budgets = data.budgets || {};
+      if(data.categories && data.categories.length){
+        CATEGORIES.length = 0;
+        CATEGORIES.push(...data.categories);
+      }
+      saveExpenses();
+      saveBudgetsToStorage();
+      saveCategories();
+      render();
+      alert('가져오기 완료');
+    }catch(e){ alert('파일을 읽을 수 없어요. 올바른 백업 파일인지 확인해주세요.'); }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 function changeMonth(delta){
