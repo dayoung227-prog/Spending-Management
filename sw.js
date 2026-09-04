@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jichul-gwanli-v2';
+const CACHE_NAME = 'gagyebu-v3';
 const ASSETS = [
   './',
   './index.html',

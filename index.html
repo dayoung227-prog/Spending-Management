@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>지출 관리</title>
+<title>가계부</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#3B2A1E">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="지출 관리">
+<meta name="apple-mobile-web-app-title" content="가계부">
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&display=swap');
@@ -110,6 +110,8 @@ body{
 .trend-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
 .trend-bar{width:100%;max-width:26px;border-radius:4px 4px 0 0;background:#D8CFBD;}
 .trend-bar.current{background:var(--brown-deep);}
+.trend-bar-income{background:#B9E0BA;}
+.trend-bar-income.current{background:var(--green);}
 .trend-label{font-size:10px;color:var(--ink-soft);margin-top:6px;}
 .trend-amt{font-size:9.5px;color:var(--ink-soft);margin-top:2px;font-variant-numeric:tabular-nums;}
 
@@ -169,7 +171,7 @@ body{
 
   <div class="topbar">
     <div class="topbar-row1">
-      <div class="app-title">지출 관리</div>
+      <div class="app-title">가계부</div>
       <div class="month-switch">
         <button onclick="changeMonth(-1)">‹</button>
         <span id="monthLabel"></span>
@@ -197,6 +199,10 @@ body{
     <div class="stats-section" style="padding-top:0;">
       <div class="stats-title">최근 6개월 지출 추이</div>
       <div class="trend-wrap" id="trendWrap"></div>
+    </div>
+    <div class="stats-section" style="padding-top:0;">
+      <div class="stats-title">최근 6개월 수입 추이</div>
+      <div class="trend-wrap" id="trendWrapIncome"></div>
     </div>
   </div>
 
@@ -341,7 +347,7 @@ function exportData(){
   const blob = new Blob([JSON.stringify({expenses:state.expenses, budgets:state.budgets, categories:CATEGORIES}, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `지출관리_백업_${todayStr()}.json`;
+  a.download = `가계부_백업_${todayStr()}.json`;
   a.click();
 }
 function importData(event){
@@ -531,6 +537,8 @@ function renderStats(list, total){
   // trend: last 6 months
   const trendWrap = document.getElementById('trendWrap');
   trendWrap.innerHTML = '';
+  const trendWrapIncome = document.getElementById('trendWrapIncome');
+  trendWrapIncome.innerHTML = '';
   const months = [];
   const [cy,cm] = state.currentMonth.split('-').map(Number);
   for(let i=5;i>=0;i--){
@@ -538,7 +546,9 @@ function renderStats(list, total){
     months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
   }
   const totals = months.map(mo => monthExpenses(mo).filter(e=>(e.type||'expense')==='expense').reduce((s,e)=>s+e.amount,0));
+  const incomeTotals = months.map(mo => monthExpenses(mo).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0));
   const max = Math.max(...totals, 1);
+  const maxIncome = Math.max(...incomeTotals, 1);
   months.forEach((mo,i)=>{
     const [,mm] = mo.split('-');
     const h = Math.max(4, (totals[i]/max)*100);
@@ -548,6 +558,14 @@ function renderStats(list, total){
       <div class="trend-bar${mo===state.currentMonth?' current':''}" style="height:${h}%"></div>
       <div class="trend-label">${Number(mm)}월</div>`;
     trendWrap.appendChild(col);
+
+    const hIncome = Math.max(4, (incomeTotals[i]/maxIncome)*100);
+    const colIncome = document.createElement('div');
+    colIncome.className = 'trend-bar-col';
+    colIncome.innerHTML = `<div class="trend-amt">${incomeTotals[i]>0 ? Math.round(incomeTotals[i]/1000)+'k' : ''}</div>
+      <div class="trend-bar trend-bar-income${mo===state.currentMonth?' current':''}" style="height:${hIncome}%"></div>
+      <div class="trend-label">${Number(mm)}월</div>`;
+    trendWrapIncome.appendChild(colIncome);
   });
 }
 
