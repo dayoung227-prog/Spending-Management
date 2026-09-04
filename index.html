@@ -55,10 +55,12 @@ body{
 .month-switch button{background:none;border:none;color:#F3EDE0;font-size:16px;cursor:pointer;padding:2px 4px;opacity:0.85;}
 .month-switch button:hover{opacity:1;}
 .summary-strip{display:flex;background:rgba(255,255,255,0.08);border-radius:8px 8px 0 0;margin-top:2px;overflow:hidden;}
-.summary-cell{flex:1;text-align:center;padding:10px 4px 12px;border-right:1px solid rgba(255,255,255,0.12);}
+.summary-cell{flex:1;box-sizing:border-box;text-align:center;padding:10px 4px 12px;border-right:1px solid rgba(255,255,255,0.12);}
 .summary-cell:last-child{border-right:none;}
 .summary-cell .label{font-size:10.5px;color:#C9BEA9;margin-bottom:4px;}
 .summary-cell .value{font-family:'Noto Serif KR',serif;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;}
+.summary-cell .value.income{color:#9FD8A0;}
+.summary-cell .value.balance-neg{color:#E8938F;}
 
 /* ---- content ---- */
 .content{flex:1;overflow-y:auto;padding-bottom:90px;}
@@ -146,6 +148,7 @@ body{
 .sheet-handle{width:36px;height:4px;background:var(--line);border-radius:2px;margin:0 auto 14px;}
 .sheet h3{margin:0 0 14px;font-size:16px;}
 .amount-input{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;font-size:22px;font-family:'Noto Serif KR',serif;font-weight:700;text-align:right;margin-bottom:10px;font-variant-numeric:tabular-nums;}
+.amount-input.income-mode{color:var(--green);}
 .field-row{display:flex;gap:8px;margin-bottom:10px;}
 .field-row input{flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;font-family:inherit;}
 .cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;}
@@ -175,8 +178,8 @@ body{
     </div>
     <div class="summary-strip">
       <div class="summary-cell"><div class="label">총 지출</div><div class="value" id="sTotal">₩0</div></div>
-      <div class="summary-cell"><div class="label">건수</div><div class="value" id="sCount">0건</div></div>
-      <div class="summary-cell"><div class="label">일 평균</div><div class="value" id="sAvg">₩0</div></div>
+      <div class="summary-cell"><div class="label">총 수입</div><div class="value income" id="sIncome">₩0</div></div>
+      <div class="summary-cell"><div class="label">잔액</div><div class="value" id="sBalance">₩0</div></div>
     </div>
   </div>
 
@@ -228,6 +231,10 @@ body{
     <div class="sheet">
       <div class="sheet-handle"></div>
       <h3 id="sheetTitle">지출 추가</h3>
+      <div class="chip-toggle-group" id="typeRow">
+        <div class="chip-toggle selected" data-type="expense" onclick="setFormType('expense')">지출</div>
+        <div class="chip-toggle" data-type="income" onclick="setFormType('income')">수입</div>
+      </div>
       <input type="number" class="amount-input" id="fAmount" placeholder="0원">
       <div class="field-row">
         <input type="date" id="fDate">
@@ -282,6 +289,7 @@ let state = {
   filterRecurType: null,
   selectedFormCategory: '',
   formRecurrence: 'none',
+  formType: 'expense',
   editingId: null,
   activeView: 'list',
   categoryEditIndex: null,
@@ -387,15 +395,14 @@ function render(){
   document.getElementById('monthLabel').textContent = `${y}년 ${Number(m)}월`;
 
   const list = monthExpenses();
-  const total = list.reduce((s,e)=>s+e.amount,0);
+  const total = list.filter(e=>(e.type||'expense')==='expense').reduce((s,e)=>s+e.amount,0);
+  const incomeTotal = list.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const balance = incomeTotal - total;
   document.getElementById('sTotal').textContent = fmt(total);
-  document.getElementById('sCount').textContent = list.length + '건';
-
-  const now = new Date();
-  const isCurrentRealMonth = state.currentMonth === now.toISOString().slice(0,7);
-  const daysInMonth = new Date(Number(y), Number(m), 0).getDate();
-  const elapsed = isCurrentRealMonth ? now.getDate() : daysInMonth;
-  document.getElementById('sAvg').textContent = fmt(elapsed ? total/elapsed : 0);
+  document.getElementById('sIncome').textContent = fmt(incomeTotal);
+  const balanceEl = document.getElementById('sBalance');
+  balanceEl.textContent = (balance<0?'-':'') + fmt(Math.abs(balance));
+  balanceEl.classList.toggle('balance-neg', balance<0);
 
   if(state.activeView === 'list') renderList(list);
   if(state.activeView === 'stats') renderStats(list, total);
@@ -442,25 +449,26 @@ function renderList(list){
   Object.keys(byDate).sort().reverse().forEach(date=>{
     const dObj = new Date(date);
     const weekday = ['일','월','화','수','목','금','토'][dObj.getDay()];
-    const dayTotal = byDate[date].reduce((s,e)=>s+e.amount,0);
+    const dayExpenseTotal = byDate[date].filter(e=>(e.type||'expense')==='expense').reduce((s,e)=>s+e.amount,0);
     const group = document.createElement('div');
     group.className = 'day-group';
     group.innerHTML = `<div class="day-header">
         <div class="day-badge">${dObj.getDate()}</div>
-        <div class="day-meta">${dObj.getMonth()+1}월 ${dObj.getDate()}일 (${weekday})<br><b>${fmt(dayTotal)}</b></div>
+        <div class="day-meta">${dObj.getMonth()+1}월 ${dObj.getDate()}일 (${weekday})<br><b>${fmt(dayExpenseTotal)}</b></div>
       </div>`;
     byDate[date].forEach(e=>{
-      const c = catInfo(e.category);
+      const isIncome = e.type === 'income';
+      const c = isIncome ? {color:'#3F7A5C', icon:'💵'} : catInfo(e.category);
       const row = document.createElement('div');
       row.className = 'expense-row';
       row.onclick = ()=> editExpense(e.id);
       row.innerHTML = `
         <div class="cat-icon" style="background:${c.color}">${c.icon}</div>
         <div class="row-text">
-          <div class="memo">${e.memo || e.category}${e.recurrenceType ? `<span class="recur-tag">${e.recurrenceType==='installment'?'할부':'고정비'} ${e.seriesIndex}/${e.seriesTotal}</span>` : ''}</div>
-          <div class="cat-name">${e.category}</div>
+          <div class="memo">${e.memo || (isIncome?'수입':e.category)}${e.recurrenceType ? `<span class="recur-tag">${e.recurrenceType==='installment'?'할부':(isIncome?'정기수입':'고정비')} ${e.seriesIndex}/${e.seriesTotal}</span>` : ''}</div>
+          <div class="cat-name">${isIncome ? '수입' : e.category}</div>
         </div>
-        <div class="row-amount">-${fmt(e.amount)}</div>
+        <div class="row-amount"${isIncome?' style="color:var(--green);"':''}>${isIncome?'+':'-'}${fmt(e.amount)}</div>
       `;
       group.appendChild(row);
     });
@@ -471,7 +479,7 @@ function renderList(list){
 function renderStats(list, total){
   const byCat = {};
   CATEGORIES.forEach(c=>byCat[c.name]=0);
-  list.forEach(e=> byCat[e.category] = (byCat[e.category]||0)+e.amount);
+  list.forEach(e=> { if((e.type||'expense')==='expense') byCat[e.category] = (byCat[e.category]||0)+e.amount; });
 
   document.getElementById('donutTotal').textContent = fmt(total);
   const donut = document.getElementById('donut');
@@ -529,7 +537,7 @@ function renderStats(list, total){
     const d = new Date(cy, cm-1-i, 1);
     months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
   }
-  const totals = months.map(mo => monthExpenses(mo).reduce((s,e)=>s+e.amount,0));
+  const totals = months.map(mo => monthExpenses(mo).filter(e=>(e.type||'expense')==='expense').reduce((s,e)=>s+e.amount,0));
   const max = Math.max(...totals, 1);
   months.forEach((mo,i)=>{
     const [,mm] = mo.split('-');
@@ -656,10 +664,31 @@ function renderCatGrid(){
 }
 function setFormRecurrence(val){
   state.formRecurrence = val;
-  document.querySelectorAll('.chip-toggle').forEach(el=>{
+  document.querySelectorAll('#recurRow .chip-toggle').forEach(el=>{
     el.classList.toggle('selected', el.dataset.val===val);
   });
   document.getElementById('fMonths').style.display = val==='none' ? 'none' : 'block';
+}
+function setFormType(val){
+  state.formType = val;
+  document.querySelectorAll('#typeRow .chip-toggle').forEach(el=>{
+    el.classList.toggle('selected', el.dataset.type===val);
+  });
+  const catGrid = document.getElementById('catGrid');
+  const installToggle = document.querySelector('#recurRow .chip-toggle[data-val="installment"]');
+  const fixedToggle = document.querySelector('#recurRow .chip-toggle[data-val="fixed"]');
+  const amountInput = document.getElementById('fAmount');
+  if(val === 'income'){
+    catGrid.style.display = 'none';
+    if(installToggle) installToggle.style.display = 'none';
+    if(fixedToggle) fixedToggle.textContent = '정기수입';
+    amountInput.classList.add('income-mode');
+  } else {
+    catGrid.style.display = 'grid';
+    if(installToggle) installToggle.style.display = '';
+    if(fixedToggle) fixedToggle.textContent = '고정비';
+    amountInput.classList.remove('income-mode');
+  }
 }
 function openSheet(){
   state.editingId = null;
@@ -672,6 +701,7 @@ function openSheet(){
   document.getElementById('recurRow').style.display = 'block';
   document.getElementById('seriesInfo').style.display = 'none';
   setFormRecurrence('none');
+  setFormType('expense');
   state.selectedFormCategory = CATEGORIES[0] ? CATEGORIES[0].name : '';
   renderCatGrid();
   document.getElementById('sheetOverlay').classList.add('show');
@@ -680,17 +710,18 @@ function editExpense(id){
   const e = state.expenses.find(x=>x.id===id);
   if(!e) return;
   state.editingId = id;
-  document.getElementById('sheetTitle').textContent = '지출 수정';
+  document.getElementById('sheetTitle').textContent = (e.type==='income' ? '수입 수정' : '지출 수정');
   document.getElementById('deleteBtn').style.display = 'inline-block';
   document.getElementById('fAmount').value = e.amount;
   document.getElementById('fMemo').value = e.memo;
   document.getElementById('fDate').value = e.date;
-  state.selectedFormCategory = e.category;
+  state.selectedFormCategory = e.category || (CATEGORIES[0] ? CATEGORIES[0].name : '');
   renderCatGrid();
+  setFormType(e.type === 'income' ? 'income' : 'expense');
   document.getElementById('recurRow').style.display = 'none';
   const seriesInfo = document.getElementById('seriesInfo');
   if(e.seriesId){
-    const typeLabel = e.recurrenceType === 'installment' ? '할부' : '고정비';
+    const typeLabel = e.recurrenceType === 'installment' ? '할부' : (e.type==='income' ? '정기수입' : '고정비');
     document.getElementById('seriesInfoText').textContent = `${typeLabel} · ${e.seriesTotal}개월 중 ${e.seriesIndex}번째`;
     seriesInfo.style.display = 'block';
   } else {
@@ -705,21 +736,22 @@ function submitExpense(){
   const amount = Number(document.getElementById('fAmount').value);
   const date = document.getElementById('fDate').value || todayStr();
   const memo = document.getElementById('fMemo').value.trim();
-  const category = state.selectedFormCategory;
+  const type = state.formType || 'expense';
+  const category = type === 'income' ? null : state.selectedFormCategory;
   if(!amount || amount<=0){ alert('금액을 입력해주세요.'); return; }
 
   if(state.editingId){
     const idx = state.expenses.findIndex(e=>e.id===state.editingId);
-    if(idx>-1) state.expenses[idx] = {...state.expenses[idx], amount, date, memo, category};
+    if(idx>-1) state.expenses[idx] = {...state.expenses[idx], amount, date, memo, category, type};
   } else if(state.formRecurrence === 'none'){
-    state.expenses.push({id:genId(), amount, date, memo, category});
+    state.expenses.push({id:genId(), amount, date, memo, category, type});
   } else {
     const months = Math.max(0, Number(document.getElementById('fMonths').value) || 0);
     if(!months){ alert('몇 개월 동안 반영할지 입력해주세요.'); return; }
     const seriesId = genId();
     for(let i=0;i<months;i++){
       state.expenses.push({
-        id: genId(), amount, date: addMonthsClamped(date, i), memo, category,
+        id: genId(), amount, date: addMonthsClamped(date, i), memo, category, type,
         recurrenceType: state.formRecurrence, seriesId, seriesIndex: i+1, seriesTotal: months
       });
     }
