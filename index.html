@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>지출 관리</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3B2A1E">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="지출 관리">
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&display=swap');
@@ -126,8 +133,8 @@ body{
 .btn{padding:9px 16px;border-radius:8px;border:1px solid var(--brown-deep);background:var(--brown-deep);color:#fff;font-size:13px;cursor:pointer;font-weight:600;flex:1;}
 .btn.ghost{background:none;color:var(--brown-deep);}
 
-/* top add button + tabbar */
-.add-btn-top{background:#F2B807;color:#3B2A1E;border:2px solid rgba(255,255,255,0.35);width:38px;height:38px;border-radius:50%;font-size:20px;font-weight:800;cursor:pointer;flex-shrink:0;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,0.35);}
+/* fab + tabbar */
+.fab{position:absolute;right:16px;bottom:82px;width:54px;height:54px;border-radius:50%;background:var(--gold);color:var(--brown-deep);border:none;font-size:27px;font-weight:800;box-shadow:0 3px 10px rgba(43,35,28,0.35);cursor:pointer;z-index:5;}
 .tabbar{background:var(--brown-deep);display:flex;flex-shrink:0;}
 .tab{flex:1;background:none;border:none;color:#B7AA92;padding:10px 0 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;}
 .tab.active{color:#F3EDE0;}
@@ -148,6 +155,11 @@ body{
 .cat-pick .ic{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;}
 .cat-pick .nm{font-size:10px;color:var(--ink-soft);}
 .sheet-btn-row{display:flex;gap:8px;}
+.chip-toggle-group{display:flex;gap:6px;margin-bottom:8px;}
+.chip-toggle{flex:1;text-align:center;padding:8px 4px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;background:var(--paper);}
+.chip-toggle.selected{background:var(--brown-deep);color:#fff;border-color:var(--brown-deep);}
+.recur-row{margin-bottom:6px;}
+.recur-tag{display:inline-block;font-size:9.5px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:1px 6px;color:var(--ink-soft);margin-left:6px;vertical-align:middle;}
 </style>
 </head>
 <body>
@@ -160,7 +172,6 @@ body{
         <button onclick="changeMonth(-1)">‹</button>
         <span id="monthLabel"></span>
         <button onclick="changeMonth(1)">›</button>
-        <button class="add-btn-top" onclick="openSheet()">＋</button>
       </div>
     </div>
     <div class="summary-strip">
@@ -190,12 +201,23 @@ body{
   <div class="content" id="viewSettings" style="display:none;">
     <div class="settings-section">
       <div class="settings-card">
+        <h4>동기화 코드</h4>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="text" id="syncCodeDisplay" readonly style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--paper);">
+          <button class="cm-icon-btn" onclick="copySyncCode()">📋</button>
+        </div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:8px;line-height:1.5;">이 코드를 메모해두세요. 다른 기기에서 이 앱을 열 때 이 코드를 입력하면 같은 데이터를 볼 수 있어요.</div>
+        <button class="btn ghost" style="width:100%;margin-top:10px;" onclick="switchSyncCode()">다른 코드로 전환</button>
+      </div>
+      <div class="settings-card">
         <h4>카테고리 및 예산</h4>
         <div id="categoryBudgetList"></div>
         <button class="add-cat-btn" onclick="startAddCategory()">＋ 카테고리 추가</button>
       </div>
     </div>
   </div>
+
+  <button class="fab" onclick="openSheet()">＋</button>
 
   <div class="tabbar">
     <button class="tab active" data-tab="list" onclick="switchView('list')"><span class="ic">📋</span>내역</button>
@@ -213,6 +235,17 @@ body{
         <input type="text" id="fMemo" placeholder="메모 (예: 스타벅스)">
       </div>
       <div class="cat-grid" id="catGrid"></div>
+      <div class="recur-row" id="recurRow">
+        <div class="chip-toggle-group">
+          <div class="chip-toggle selected" data-val="none" onclick="setFormRecurrence('none')">반복없음</div>
+          <div class="chip-toggle" data-val="fixed" onclick="setFormRecurrence('fixed')">고정비</div>
+          <div class="chip-toggle" data-val="installment" onclick="setFormRecurrence('installment')">할부</div>
+        </div>
+        <input type="number" id="fMonths" placeholder="몇 개월 동안 반영할까요? (예: 12)" min="1" style="display:none;width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px;box-sizing:border-box;margin-top:2px;">
+      </div>
+      <div id="seriesInfo" style="display:none;font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">
+        <span id="seriesInfoText"></span> · <span style="color:var(--red);text-decoration:underline;cursor:pointer;" onclick="deleteSeriesForward()">이후 반복 전체 삭제</span>
+      </div>
       <div class="sheet-btn-row">
         <button class="btn ghost" id="deleteBtn" style="display:none;" onclick="deleteFromSheet()">삭제</button>
         <button class="btn ghost" onclick="closeSheet()">취소</button>
@@ -221,8 +254,22 @@ body{
     </div>
   </div>
 
+  <div class="sheet-overlay" id="syncOverlay">
+    <div class="sheet" style="text-align:center;">
+      <div class="sheet-handle"></div>
+      <h3>동기화 코드</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin-bottom:14px;text-align:left;">
+        나만의 동기화 코드를 정해주세요. 이 코드로 클라우드에 데이터가 저장되고,
+        나중에 이 코드를 입력하면 어느 기기에서든 다시 불러올 수 있어요.<br><b>잊지 않게 꼭 메모해두세요.</b>
+      </p>
+      <input type="text" id="syncCodeInput" placeholder="예: dayoung-expense-2026" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:14px;text-align:center;box-sizing:border-box;">
+      <button class="btn" id="syncSubmitBtn" style="width:100%;">시작하기</button>
+    </div>
+  </div>
+
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const DEFAULT_CATEGORIES = [
   {name:'식비',    color:'#D9822B', icon:'🍙'},
@@ -238,16 +285,23 @@ const DEFAULT_CATEGORIES = [
   {name:'기타',    color:'#7A7267', icon:'✳️'},
 ];
 let CATEGORIES = [];
-const EXP_KEY = 'gagyebu:expenses';
-const BUDGET_KEY = 'gagyebu:budgets';
-const CATEGORY_KEY = 'gagyebu:categories';
+const CACHE_KEY = 'gagyebu:cache';
+const SYNC_CODE_KEY = 'gagyebu:synccode';
+
+// ⚠️ Supabase 프로젝트 만든 뒤 아래 두 값을 본인 값으로 바꿔주세요.
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+let supabaseClient = null;
+let syncCode = null;
 
 let state = {
   expenses: [],
   budgets: {},
   currentMonth: new Date().toISOString().slice(0,7),
   filterCategory: null,
+  filterRecurring: false,
   selectedFormCategory: '',
+  formRecurrence: 'none',
   editingId: null,
   activeView: 'list',
   categoryEditIndex: null,
@@ -256,34 +310,148 @@ let state = {
 function fmt(n){ return '₩' + Math.round(n).toLocaleString('ko-KR'); }
 function catInfo(name){ return CATEGORIES.find(c=>c.name===name) || {color:'#999', icon:'✳️'}; }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
+function genId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function addMonthsClamped(dateStr, months){
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const target = new Date(y, m-1+months, 1);
+  const daysInTarget = new Date(target.getFullYear(), target.getMonth()+1, 0).getDate();
+  const day = Math.min(d, daysInTarget);
+  const dd = new Date(target.getFullYear(), target.getMonth(), day);
+  return dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
+}
+
+function initSupabase(){
+  if(!supabaseClient && window.supabase){
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+  return supabaseClient;
+}
+
+function promptSyncCode(){
+  return new Promise((resolve)=>{
+    document.getElementById('syncOverlay').classList.add('show');
+    document.getElementById('syncSubmitBtn').onclick = ()=>{
+      const v = document.getElementById('syncCodeInput').value.trim();
+      if(!v){ alert('코드를 입력해주세요.'); return; }
+      document.getElementById('syncOverlay').classList.remove('show');
+      resolve(v);
+    };
+  });
+}
+
+async function ensureSyncCode(){
+  let code = localStorage.getItem(SYNC_CODE_KEY);
+  if(code) return code;
+  code = await promptSyncCode();
+  localStorage.setItem(SYNC_CODE_KEY, code);
+  return code;
+}
+
+function loadLocalCache(){
+  try{
+    const c = localStorage.getItem(CACHE_KEY);
+    return c ? JSON.parse(c) : null;
+  }catch(e){ return null; }
+}
+function saveLocalCache(payload){
+  try{ localStorage.setItem(CACHE_KEY, JSON.stringify(payload)); }catch(e){}
+}
+
+async function fetchFromCloud(retryCount){
+  retryCount = retryCount || 0;
+  try{
+    const res = await supabaseClient
+      .from('gagyebu_data')
+      .select('payload')
+      .eq('sync_code', syncCode)
+      .maybeSingle();
+    if(res.error && retryCount < 2){
+      await new Promise(r=>setTimeout(r, 800 * (retryCount+1)));
+      return fetchFromCloud(retryCount+1);
+    }
+    return res;
+  }catch(e){
+    if(retryCount < 2){
+      await new Promise(r=>setTimeout(r, 800 * (retryCount+1)));
+      return fetchFromCloud(retryCount+1);
+    }
+    throw e;
+  }
+}
 
 async function loadData(){
-  try{
-    const rc = await window.storage.get(CATEGORY_KEY, false);
-    const loaded = rc ? JSON.parse(rc.value) : null;
-    CATEGORIES.push(...(loaded && loaded.length ? loaded : JSON.parse(JSON.stringify(DEFAULT_CATEGORIES))));
-  }catch(e){
-    CATEGORIES.push(...JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)));
-  }
-  try{ const r = await window.storage.get(EXP_KEY, false); state.expenses = r ? JSON.parse(r.value) : []; }
-  catch(e){ state.expenses = []; }
-  try{ const r2 = await window.storage.get(BUDGET_KEY, false); state.budgets = r2 ? JSON.parse(r2.value) : {}; }
-  catch(e){ state.budgets = {}; }
-  state.selectedFormCategory = CATEGORIES[0] ? CATEGORIES[0].name : '';
+  initSupabase();
+  syncCode = await ensureSyncCode();
   document.getElementById('fDate').value = todayStr();
+
+  try{
+    const { data, error } = await fetchFromCloud();
+    if(error) throw error;
+
+    if(data && data.payload){
+      const p = data.payload;
+      CATEGORIES.push(...(p.categories && p.categories.length ? p.categories : JSON.parse(JSON.stringify(DEFAULT_CATEGORIES))));
+      state.expenses = p.expenses || [];
+      state.budgets = p.budgets || {};
+    } else {
+      CATEGORIES.push(...JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)));
+      state.expenses = [];
+      state.budgets = {};
+      await pushToCloud();
+    }
+    saveLocalCache({expenses:state.expenses, budgets:state.budgets, categories:CATEGORIES});
+  }catch(e){
+    console.error(e);
+    const cached = loadLocalCache();
+    if(cached){
+      CATEGORIES.push(...(cached.categories && cached.categories.length ? cached.categories : JSON.parse(JSON.stringify(DEFAULT_CATEGORIES))));
+      state.expenses = cached.expenses || [];
+      state.budgets = cached.budgets || {};
+      alert('클라우드 연결에 실패해서 마지막으로 저장된 데이터를 불러왔어요. 인터넷 연결을 확인해주세요.');
+    } else {
+      CATEGORIES.push(...JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)));
+      alert('클라우드 연결에 실패했어요. 인터넷 연결을 확인하고 새로고침해주세요.');
+    }
+  }
+
+  state.selectedFormCategory = CATEGORIES[0] ? CATEGORIES[0].name : '';
+  const disp = document.getElementById('syncCodeDisplay');
+  if(disp) disp.value = syncCode;
   render();
 }
-async function saveExpenses(){
-  try{ await window.storage.set(EXP_KEY, JSON.stringify(state.expenses), false); }
-  catch(e){ alert('저장에 실패했어요. 다시 시도해주세요.'); }
+
+async function pushToCloud(retryCount){
+  retryCount = retryCount || 0;
+  const payload = { expenses: state.expenses, budgets: state.budgets, categories: CATEGORIES };
+  saveLocalCache(payload);
+  try{
+    const { error } = await supabaseClient
+      .from('gagyebu_data')
+      .upsert({ sync_code: syncCode, payload, updated_at: new Date().toISOString() }, { onConflict: 'sync_code' });
+    if(error) throw error;
+  }catch(e){
+    console.error(e);
+    if(retryCount < 2){
+      await new Promise(r=>setTimeout(r, 800 * (retryCount+1)));
+      return pushToCloud(retryCount+1);
+    }
+    alert('클라우드 저장에 실패했어요. 인터넷 연결을 확인해주세요. (이 기기에는 임시로 저장됐어요)');
+  }
 }
-async function saveBudgetsToStorage(){
-  try{ await window.storage.set(BUDGET_KEY, JSON.stringify(state.budgets), false); }
-  catch(e){ alert('예산 저장에 실패했어요.'); }
+function saveExpenses(){ pushToCloud(); }
+function saveBudgetsToStorage(){ pushToCloud(); }
+function saveCategories(){ pushToCloud(); }
+
+function copySyncCode(){
+  if(navigator.clipboard) navigator.clipboard.writeText(syncCode).catch(()=>{});
+  const el = document.getElementById('syncCodeDisplay');
+  if(el){ el.select(); }
+  alert('동기화 코드를 복사했어요. 잘 보관해주세요.');
 }
-async function saveCategories(){
-  try{ await window.storage.set(CATEGORY_KEY, JSON.stringify(CATEGORIES), false); }
-  catch(e){ alert('카테고리 저장에 실패했어요.'); }
+async function switchSyncCode(){
+  if(!confirm('다른 동기화 코드로 전환할까요? 지금 화면의 데이터는 클라우드에 그대로 남아있어요.')) return;
+  localStorage.removeItem(SYNC_CODE_KEY);
+  location.reload();
 }
 
 function changeMonth(delta){
@@ -303,6 +471,7 @@ function switchView(v){
     document.getElementById('view'+name.charAt(0).toUpperCase()+name.slice(1)).style.display = name===v ? 'block' : 'none';
   });
   document.querySelectorAll('.tab').forEach(t=> t.classList.toggle('active', t.dataset.tab===v));
+  document.querySelector('.fab').style.display = v==='list' ? 'block' : 'none';
   render();
 }
 
@@ -334,6 +503,11 @@ function renderList(list){
   allChip.textContent = '전체';
   allChip.onclick = ()=>{ state.filterCategory=null; render(); };
   filterWrap.appendChild(allChip);
+  const recurChip = document.createElement('div');
+  recurChip.className = 'chip' + (state.filterRecurring ? ' selected' : '');
+  recurChip.textContent = '🔁 고정비·할부';
+  recurChip.onclick = ()=>{ state.filterRecurring = !state.filterRecurring; render(); };
+  filterWrap.appendChild(recurChip);
   CATEGORIES.forEach(c=>{
     const chip = document.createElement('div');
     chip.className = 'chip' + (state.filterCategory===c.name?' selected':'');
@@ -344,7 +518,7 @@ function renderList(list){
 
   const wrap = document.getElementById('expenseListWrap');
   wrap.innerHTML = '';
-  let filtered = state.filterCategory ? list.filter(e=>e.category===state.filterCategory) : list;
+  let filtered = list.filter(e => (!state.filterCategory || e.category===state.filterCategory) && (!state.filterRecurring || e.recurrenceType));
   if(filtered.length===0){
     wrap.innerHTML = '<div class="empty-state">이번 달 지출 내역이 없어요.<br>오른쪽 아래 ＋ 버튼으로 추가해보세요.</div>';
     return;
@@ -371,7 +545,7 @@ function renderList(list){
       row.innerHTML = `
         <div class="cat-icon" style="background:${c.color}">${c.icon}</div>
         <div class="row-text">
-          <div class="memo">${e.memo || e.category}</div>
+          <div class="memo">${e.memo || e.category}${e.recurrenceType ? `<span class="recur-tag">${e.recurrenceType==='installment'?'할부':'고정비'} ${e.seriesIndex}/${e.seriesTotal}</span>` : ''}</div>
           <div class="cat-name">${e.category}</div>
         </div>
         <div class="row-amount">-${fmt(e.amount)}</div>
@@ -568,6 +742,13 @@ function renderCatGrid(){
     grid.appendChild(el);
   });
 }
+function setFormRecurrence(val){
+  state.formRecurrence = val;
+  document.querySelectorAll('.chip-toggle').forEach(el=>{
+    el.classList.toggle('selected', el.dataset.val===val);
+  });
+  document.getElementById('fMonths').style.display = val==='none' ? 'none' : 'block';
+}
 function openSheet(){
   state.editingId = null;
   document.getElementById('sheetTitle').textContent = '지출 추가';
@@ -575,7 +756,11 @@ function openSheet(){
   document.getElementById('fAmount').value = '';
   document.getElementById('fMemo').value = '';
   document.getElementById('fDate').value = todayStr();
-  state.selectedFormCategory = CATEGORIES[0].name;
+  document.getElementById('fMonths').value = '';
+  document.getElementById('recurRow').style.display = 'block';
+  document.getElementById('seriesInfo').style.display = 'none';
+  setFormRecurrence('none');
+  state.selectedFormCategory = CATEGORIES[0] ? CATEGORIES[0].name : '';
   renderCatGrid();
   document.getElementById('sheetOverlay').classList.add('show');
 }
@@ -590,6 +775,15 @@ function editExpense(id){
   document.getElementById('fDate').value = e.date;
   state.selectedFormCategory = e.category;
   renderCatGrid();
+  document.getElementById('recurRow').style.display = 'none';
+  const seriesInfo = document.getElementById('seriesInfo');
+  if(e.seriesId){
+    const typeLabel = e.recurrenceType === 'installment' ? '할부' : '고정비';
+    document.getElementById('seriesInfoText').textContent = `${typeLabel} · ${e.seriesTotal}개월 중 ${e.seriesIndex}번째`;
+    seriesInfo.style.display = 'block';
+  } else {
+    seriesInfo.style.display = 'none';
+  }
   document.getElementById('sheetOverlay').classList.add('show');
 }
 function closeSheet(){ document.getElementById('sheetOverlay').classList.remove('show'); }
@@ -605,8 +799,18 @@ function submitExpense(){
   if(state.editingId){
     const idx = state.expenses.findIndex(e=>e.id===state.editingId);
     if(idx>-1) state.expenses[idx] = {...state.expenses[idx], amount, date, memo, category};
+  } else if(state.formRecurrence === 'none'){
+    state.expenses.push({id:genId(), amount, date, memo, category});
   } else {
-    state.expenses.push({id:Date.now(), amount, date, memo, category});
+    const months = Math.max(0, Number(document.getElementById('fMonths').value) || 0);
+    if(!months){ alert('몇 개월 동안 반영할지 입력해주세요.'); return; }
+    const seriesId = genId();
+    for(let i=0;i<months;i++){
+      state.expenses.push({
+        id: genId(), amount, date: addMonthsClamped(date, i), memo, category,
+        recurrenceType: state.formRecurrence, seriesId, seriesIndex: i+1, seriesTotal: months
+      });
+    }
   }
   saveExpenses();
   closeSheet();
@@ -620,8 +824,25 @@ function deleteFromSheet(){
   closeSheet();
   render();
 }
+function deleteSeriesForward(){
+  if(!state.editingId) return;
+  const e = state.expenses.find(x=>x.id===state.editingId);
+  if(!e || !e.seriesId) return;
+  const remaining = e.seriesTotal - e.seriesIndex + 1;
+  if(!confirm(`이번 항목부터 이후 반복되는 항목까지 총 ${remaining}건을 삭제할까요?`)) return;
+  state.expenses = state.expenses.filter(x => !(x.seriesId===e.seriesId && x.seriesIndex >= e.seriesIndex));
+  saveExpenses();
+  closeSheet();
+  render();
+}
 
 loadData();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>
