@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>가계부</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3B2A1E">
+<link rel="icon" href="icon-192-v2.png">
+<link rel="apple-touch-icon" href="icon-192-v2.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="가계부">
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&display=swap');
@@ -202,6 +209,15 @@ body{
   <div class="content" id="viewSettings" style="display:none;">
     <div class="settings-section">
       <div class="settings-card">
+        <h4>데이터 백업</h4>
+        <div style="font-size:11px;color:var(--ink-soft);margin-bottom:10px;line-height:1.5;">이 앱은 이 폰(브라우저)에만 데이터가 저장돼요. 가끔 내보내기로 파일을 저장해두면 안전해요.</div>
+        <div class="settings-btn-row">
+          <button class="btn ghost" onclick="exportData()">내보내기</button>
+          <button class="btn ghost" onclick="document.getElementById('importFile').click()">가져오기</button>
+        </div>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+      </div>
+      <div class="settings-card">
         <h4>카테고리 및 예산</h4>
         <div id="categoryBudgetList"></div>
         <button class="add-cat-btn" onclick="startAddCategory()">＋ 카테고리 추가</button>
@@ -298,33 +314,65 @@ function addMonthsClamped(dateStr, months){
   return dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
 }
 
-async function loadData(){
+function loadData(){
   try{
-    const rc = await window.storage.get(CATEGORY_KEY, false);
-    const loaded = rc ? JSON.parse(rc.value) : null;
+    const rc = localStorage.getItem(CATEGORY_KEY);
+    const loaded = rc ? JSON.parse(rc) : null;
     CATEGORIES.push(...(loaded && loaded.length ? loaded : JSON.parse(JSON.stringify(DEFAULT_CATEGORIES))));
   }catch(e){
     CATEGORIES.push(...JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)));
   }
-  try{ const r = await window.storage.get(EXP_KEY, false); state.expenses = r ? JSON.parse(r.value) : []; }
+  try{ const r = localStorage.getItem(EXP_KEY); state.expenses = r ? JSON.parse(r) : []; }
   catch(e){ state.expenses = []; }
-  try{ const r2 = await window.storage.get(BUDGET_KEY, false); state.budgets = r2 ? JSON.parse(r2.value) : {}; }
+  try{ const r2 = localStorage.getItem(BUDGET_KEY); state.budgets = r2 ? JSON.parse(r2) : {}; }
   catch(e){ state.budgets = {}; }
   state.selectedFormCategory = CATEGORIES[0] ? CATEGORIES[0].name : '';
   document.getElementById('fDate').value = todayStr();
   render();
 }
-async function saveExpenses(){
-  try{ await window.storage.set(EXP_KEY, JSON.stringify(state.expenses), false); }
+function saveExpenses(){
+  try{ localStorage.setItem(EXP_KEY, JSON.stringify(state.expenses)); }
   catch(e){ alert('저장에 실패했어요. 다시 시도해주세요.'); }
 }
-async function saveBudgetsToStorage(){
-  try{ await window.storage.set(BUDGET_KEY, JSON.stringify(state.budgets), false); }
+function saveBudgetsToStorage(){
+  try{ localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budgets)); }
   catch(e){ alert('예산 저장에 실패했어요.'); }
 }
-async function saveCategories(){
-  try{ await window.storage.set(CATEGORY_KEY, JSON.stringify(CATEGORIES), false); }
+function saveCategories(){
+  try{ localStorage.setItem(CATEGORY_KEY, JSON.stringify(CATEGORIES)); }
   catch(e){ alert('카테고리 저장에 실패했어요.'); }
+}
+
+function exportData(){
+  const blob = new Blob([JSON.stringify({expenses:state.expenses, budgets:state.budgets, categories:CATEGORIES}, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `가계부_백업_${todayStr()}.json`;
+  a.click();
+}
+function importData(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+      if(!confirm('현재 데이터를 덮어씁니다. 계속할까요?')) return;
+      state.expenses = data.expenses || [];
+      state.budgets = data.budgets || {};
+      if(data.categories && data.categories.length){
+        CATEGORIES.length = 0;
+        CATEGORIES.push(...data.categories);
+      }
+      saveExpenses();
+      saveBudgetsToStorage();
+      saveCategories();
+      render();
+      alert('가져오기 완료');
+    }catch(e){ alert('파일을 읽을 수 없어요. 올바른 백업 파일인지 확인해주세요.'); }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 function changeMonth(delta){
@@ -751,6 +799,12 @@ function deleteSeriesForward(){
 }
 
 loadData();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>
