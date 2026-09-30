@@ -582,6 +582,12 @@ body{
   animation:slideUp .25s ease;
 }
 @keyframes slideUp{from{transform:translateY(100%);} to{transform:translateY(0);}}
+.sheet-drag-zone{
+  margin:-16px -20px 0;
+  padding:16px 20px 8px;
+  touch-action:none;
+  cursor:grab;
+}
 .sheet-handle{
   width:36px;height:4px;
   background:var(--line);
@@ -842,8 +848,10 @@ body{
 <!-- ADD/EDIT SHEET -->
 <div class="overlay" id="overlay" onclick="closeSheetIfOverlay(event)">
   <div class="sheet" id="sheet">
-    <div class="sheet-handle"></div>
-    <p class="sheet-title" id="sheetTitle">지출 추가</p>
+    <div class="sheet-drag-zone" id="sheetDragZone">
+      <div class="sheet-handle"></div>
+      <p class="sheet-title" id="sheetTitle">지출 추가</p>
+    </div>
 
     <div id="typeRow" class="chip-row">
       <button class="chip-toggle active" data-type="expense" onclick="setFormType('expense')">지출</button>
@@ -1460,8 +1468,56 @@ function editExpense(id){
   document.getElementById('overlay').classList.add('active');
 }
 
+/* Drag-down-to-dismiss on the sheet's handle/title zone */
+(function initSheetDrag(){
+  let startY = 0, currentY = 0, dragging = false;
+  const sheet = document.getElementById('sheet');
+  const zone = document.getElementById('sheetDragZone');
+
+  function onStart(y){
+    dragging = true;
+    startY = y;
+    currentY = y;
+    sheet.style.transition = 'none';
+  }
+  function onMove(y){
+    if(!dragging) return;
+    currentY = y;
+    const delta = Math.max(0, currentY - startY);
+    sheet.style.transform = `translateY(${delta}px)`;
+  }
+  function onEnd(){
+    if(!dragging) return;
+    dragging = false;
+    const delta = Math.max(0, currentY - startY);
+    sheet.style.transition = 'transform .22s ease';
+    if(delta > 110){
+      sheet.style.transform = `translateY(100%)`;
+      setTimeout(()=>{
+        closeSheet();
+        sheet.style.transition = '';
+        sheet.style.transform = '';
+      }, 180);
+    }else{
+      sheet.style.transform = 'translateY(0)';
+    }
+  }
+
+  zone.addEventListener('touchstart', (e)=>{ onStart(e.touches[0].clientY); }, {passive:true});
+  zone.addEventListener('touchmove', (e)=>{ onMove(e.touches[0].clientY); }, {passive:true});
+  zone.addEventListener('touchend', onEnd);
+  zone.addEventListener('touchcancel', onEnd);
+
+  zone.addEventListener('mousedown', (e)=>{ onStart(e.clientY); });
+  window.addEventListener('mousemove', (e)=>{ if(dragging) onMove(e.clientY); });
+  window.addEventListener('mouseup', onEnd);
+})();
+
 function closeSheet(){
   document.getElementById('overlay').classList.remove('active');
+  const sheet = document.getElementById('sheet');
+  sheet.style.transition = '';
+  sheet.style.transform = '';
 }
 function closeSheetIfOverlay(evt){
   if(evt.target.id === 'overlay') closeSheet();
