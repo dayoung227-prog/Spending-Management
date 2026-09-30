@@ -115,9 +115,16 @@ body{
 }
 .summary-top{
   display:flex;
-  justify-content:space-between;
   align-items:flex-start;
   margin-bottom:14px;
+  gap:10px;
+}
+.summary-item{
+  flex:1;
+  min-width:0;
+}
+.summary-item.balance{
+  text-align:right;
 }
 .summary-item .label{
   font-size:11px;
@@ -126,9 +133,13 @@ body{
   font-weight:600;
 }
 .summary-item .value{
-  font-size:19px;
+  font-size:18px;
   font-weight:800;
   letter-spacing:-0.3px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:clip;
+  display:block;
 }
 .summary-item.income .value{color:#B9E4CB;}
 .summary-item.expense .value{color:#F3C6BA;}
@@ -162,6 +173,34 @@ body{
   font-size:12px;
   color:#F3C6BA;
   font-weight:700;
+}
+
+.notif-banner{
+  margin:0 18px 12px;
+  background:var(--card);
+  border:1px solid var(--gold);
+  border-radius:12px;
+  padding:11px 12px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.notif-icon{font-size:14px; flex-shrink:0;}
+.notif-text{
+  flex:1;
+  font-size:12px;
+  font-weight:600;
+  color:var(--ink);
+  line-height:1.4;
+}
+.notif-close{
+  border:none;
+  background:transparent;
+  color:var(--ink-soft);
+  font-size:13px;
+  cursor:pointer;
+  flex-shrink:0;
+  padding:2px 4px;
 }
 
 /* Tabs */
@@ -809,6 +848,12 @@ body{
     </div>
   </div>
 
+  <div class="notif-banner" id="notifBanner" style="display:none;">
+    <span class="notif-icon">🔔</span>
+    <span class="notif-text" id="notifText"></span>
+    <button class="notif-close" onclick="closeBanner()">✕</button>
+  </div>
+
   <div class="tabs">
     <button class="tab-btn active" data-view="list" onclick="switchView('list')">내역</button>
     <button class="tab-btn" data-view="stats" onclick="switchView('stats')">통계</button>
@@ -857,6 +902,11 @@ body{
 
   <!-- SETTINGS VIEW -->
   <div class="view" id="view-settings">
+    <div class="settings-section">
+      <p class="settings-title">알림</p>
+      <button class="settings-btn" onclick="requestNotifPermission()">🔔 고정비·할부 종료 알림 받기</button>
+      <p class="settings-note">고정비나 할부가 마지막 달에 도달하면 앱을 열었을 때 알려드려요. (브라우저 알림 권한을 허용하면 시스템 알림으로도 떠요. 단, 앱이 완전히 꺼져있을 땐 알림을 보낼 수 없고, 앱을 열어야 확인할 수 있어요.)</p>
+    </div>
     <div class="settings-section">
       <p class="settings-title">테마 색상</p>
       <div class="theme-grid" id="themeGrid"></div>
@@ -1033,6 +1083,64 @@ function saveCategories(){
   localStorage.setItem('gagyebu:categories', JSON.stringify(state.categories));
 }
 
+/* ============ NOTIFICATIONS ============ */
+function requestNotifPermission(){
+  if(!('Notification' in window)){
+    alert('이 브라우저에서는 알림 기능을 지원하지 않아요. 앱을 열면 화면 안에서 알려드리는 방식은 계속 동작해요.');
+    return;
+  }
+  Notification.requestPermission().then(p=>{
+    if(p==='granted') alert('알림이 켜졌어요. 고정비·할부가 끝나는 달에 앱을 열면 알려드릴게요.');
+    else if(p==='denied') alert('알림 권한이 차단되어 있어요. 기기 설정에서 이 앱의 알림 권한을 허용해주세요.');
+  });
+}
+function getNotifiedSeries(){
+  try{ return JSON.parse(localStorage.getItem('gagyebu:notifiedSeries')||'[]'); }catch(e){ return []; }
+}
+function markSeriesNotified(seriesId){
+  const list = getNotifiedSeries();
+  if(!list.includes(seriesId)){
+    list.push(seriesId);
+    localStorage.setItem('gagyebu:notifiedSeries', JSON.stringify(list));
+  }
+}
+function showBanner(text){
+  document.getElementById('notifText').textContent = text;
+  document.getElementById('notifBanner').style.display = 'flex';
+}
+function closeBanner(){
+  document.getElementById('notifBanner').style.display = 'none';
+}
+/* Checks whether any 고정비/할부 series has just reached its final month
+   (based on today's real date, not the month being viewed) and, if so,
+   surfaces it once — as an in-app banner, plus a system notification if
+   permission was granted. There's no background server here, so this only
+   fires while the app is actually open. */
+function checkSeriesEndings(){
+  const notified = getNotifiedSeries();
+  const thisMonth = todayStr().slice(0,7);
+  const seen = new Set();
+  const messages = [];
+  state.expenses.forEach(e=>{
+    if(!e.seriesId) return;
+    if(e.seriesIndex !== e.seriesTotal) return;
+    if(monthOf(e.date) !== thisMonth) return;
+    if(notified.includes(e.seriesId) || seen.has(e.seriesId)) return;
+    seen.add(e.seriesId);
+    const info = catInfo(e.category);
+    const label = e.recurrenceType==='fixed' ? '고정비' : '할부';
+    const name = e.memo ? e.memo : info.name;
+    messages.push(`"${name}" ${label}가 이번 달로 끝났어요 (${info.name})`);
+    markSeriesNotified(e.seriesId);
+  });
+  if(messages.length===0) return;
+  const combined = messages.join(' · ');
+  showBanner(combined);
+  if('Notification' in window && Notification.permission==='granted'){
+    try{ new Notification('가계부', {body: combined, icon:'./icon-192-v2.png'}); }catch(err){}
+  }
+}
+
 /* ============ THEME ============ */
 function getSavedThemeId(){
   return localStorage.getItem('gagyebu:theme') || 'vintage';
@@ -1075,6 +1183,21 @@ function renderThemeGrid(){
 /* ============ HELPERS ============ */
 function fmt(n){
   return '₩' + Math.round(n).toLocaleString('ko-KR');
+}
+/* Shrinks the summary amount's font as the number gets longer, so a big
+   total (millions of won, or a large negative balance) never runs off
+   the edge of the card. */
+function setSummaryValue(elId, text){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.textContent = text;
+  const len = text.length;
+  let size = 18;
+  if(len > 15) size = 12;
+  else if(len > 13) size = 13.5;
+  else if(len > 11) size = 15;
+  else if(len > 9) size = 16.5;
+  el.style.fontSize = size + 'px';
 }
 function catInfo(id){
   return state.categories.find(c=>c.id===id) || {name:'기타', emoji:'✨', color:'#A08D7A'};
@@ -1152,9 +1275,9 @@ function render(){
   const expense = items.filter(e=>(e.type||'expense')==='expense').reduce((s,e)=>s+e.amount,0);
   const balance = income - expense;
 
-  document.getElementById('sumIncome').textContent = fmt(income);
-  document.getElementById('sumExpense').textContent = fmt(expense);
-  document.getElementById('sumBalance').textContent = fmt(balance);
+  setSummaryValue('sumIncome', fmt(income));
+  setSummaryValue('sumExpense', fmt(expense));
+  setSummaryValue('sumBalance', fmt(balance));
 
   const totalBudget = state.categories.reduce((s,c)=>s+(Number(c.budget)||0),0);
   const pct = totalBudget>0 ? Math.round(expense/totalBudget*100) : 0;
@@ -1730,6 +1853,7 @@ function deleteFromSheet(){
 applyTheme(getSavedThemeId());
 loadData();
 render();
+checkSeriesEndings();
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
