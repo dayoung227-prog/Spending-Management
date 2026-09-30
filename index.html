@@ -928,6 +928,50 @@ function loadData(){
     const cat = localStorage.getItem('gagyebu:categories');
     state.categories = cat ? JSON.parse(cat) : JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
   }catch(e){ state.categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)); }
+  migrateData();
+}
+
+/* Heals data saved by earlier versions of the app that used a slightly
+   different field layout (e.g. missing emoji, or expenses referencing a
+   category by name instead of id). Never deletes anything — only fills
+   in gaps and re-links references, then persists the healed data. */
+function migrateData(){
+  let categoriesChanged = false;
+  const defaultByName = {};
+  DEFAULT_CATEGORIES.forEach(c=>{ defaultByName[c.name] = c; });
+  const usedColors = ['#D97757','#5B8DB8','#C77DAE','#8A9B6E','#E4756A','#7B6CC1','#C79A4B','#5B4636','#4E8B7B','#3E7D5C','#A08D7A'];
+
+  state.categories = state.categories.map((c,i)=>{
+    const fallback = defaultByName[c.name];
+    let emoji = c.emoji || c.icon || c.emojiIcon || (fallback && fallback.emoji);
+    let color = c.color || (fallback && fallback.color);
+    if(!emoji || !color || !c.id || !c.name){
+      categoriesChanged = true;
+    }
+    return {
+      id: c.id || genId(),
+      name: c.name || c.label || c.title || '기타',
+      emoji: emoji || '🏷️',
+      color: color || usedColors[i % usedColors.length],
+      budget: Number(c.budget)||0,
+    };
+  });
+
+  const byId = {};
+  const byName = {};
+  state.categories.forEach(c=>{ byId[c.id]=c; byName[c.name]=c; });
+
+  let expensesChanged = false;
+  state.expenses.forEach(e=>{
+    if((e.type||'expense')!=='expense') return;
+    if(e.category && !byId[e.category]){
+      const match = byName[e.category];
+      if(match){ e.category = match.id; expensesChanged = true; }
+    }
+  });
+
+  if(categoriesChanged) saveCategories();
+  if(expensesChanged) saveExpenses();
 }
 function saveExpenses(){
   localStorage.setItem('gagyebu:expenses', JSON.stringify(state.expenses));
