@@ -1282,7 +1282,7 @@ function renderCatManage(){
       <div class="cat-manage-icon" style="background:${c.color}22;">${c.emoji}</div>
       <div class="cat-manage-name">${c.name}</div>
       <input type="text" class="cat-manage-budget" placeholder="예산" value="${c.budget?c.budget.toLocaleString('ko-KR'):''}"
-        inputmode="numeric" oninput="formatNumInput(this)" onchange="updateBudget('${c.id}', this.value)">
+        inputmode="numeric" oninput="formatNumInput(this); liveSaveBudget('${c.id}', this.value)">
       <div class="cat-manage-actions">
         <button class="icon-btn danger" onclick="deleteCategory('${c.id}')">✕</button>
       </div>
@@ -1292,6 +1292,22 @@ function renderCatManage(){
 function updateBudget(catId, val){
   const c = state.categories.find(c=>c.id===catId);
   if(c){ c.budget = parseNum(val); saveCategories(); render(); }
+}
+/* Saves on every keystroke (not just blur) so a budget entered right
+   before switching tabs or closing the app is never lost. Skips the
+   full re-render so the input keeps focus while typing. */
+function liveSaveBudget(catId, val){
+  const c = state.categories.find(c=>c.id===catId);
+  if(!c) return;
+  c.budget = parseNum(val);
+  saveCategories();
+  const totalBudget = state.categories.reduce((s,x)=>s+(Number(x.budget)||0),0);
+  const expense = monthExpenses().filter(e=>(e.type||'expense')==='expense').reduce((s,e)=>s+e.amount,0);
+  const pct = totalBudget>0 ? Math.round(expense/totalBudget*100) : 0;
+  const pctEl = document.getElementById('budgetPct');
+  const fillEl = document.getElementById('budgetBarFill');
+  if(pctEl) pctEl.textContent = pct+'%';
+  if(fillEl){ fillEl.style.width = Math.min(pct,100)+'%'; fillEl.classList.toggle('over', pct>100); }
 }
 function deleteCategory(catId){
   if(!confirm('이 카테고리를 삭제할까요? 해당 카테고리의 지출 내역은 "기타"로 남아있어요.')) return;
