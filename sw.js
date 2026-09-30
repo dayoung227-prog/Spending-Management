@@ -1,15 +1,15 @@
-const CACHE_NAME = 'gagyebu-v4';
+const CACHE_NAME = 'gagyebu-v5';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './icon-192-v2.png',
-  './icon-512-v2.png',
+  './icon-512-v2.png'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).catch(()=>{})
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
   self.skipWaiting();
 });
@@ -23,17 +23,15 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Network-first: always try to get the freshest version; fall back to cache only if offline.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  // 네트워크 우선: 온라인이면 항상 최신 버전을 받아오고, 오프라인일 때만 캐시로 대체
   event.respondWith(
     fetch(event.request)
-      .then((res) => {
-        if (res && res.status === 200) {
-          const resClone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resClone));
-        }
-        return res;
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
       })
       .catch(() => caches.match(event.request))
   );
