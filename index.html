@@ -552,6 +552,39 @@ body{
   align-items:center;
   gap:10px;
 }
+.theme-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:10px;
+}
+.theme-card{
+  border:2px solid var(--line);
+  border-radius:14px;
+  padding:12px;
+  cursor:pointer;
+  background:var(--card);
+}
+.theme-card.selected{
+  border-color:var(--brown);
+}
+.theme-swatches{
+  display:flex;
+  gap:5px;
+  margin-bottom:8px;
+}
+.theme-swatch{
+  width:20px;height:20px;
+  border-radius:50%;
+  border:1px solid rgba(0,0,0,0.08);
+}
+.theme-name{
+  font-size:12px;
+  font-weight:700;
+  color:var(--ink);
+  display:flex;
+  align-items:center;
+  gap:5px;
+}
 .settings-note{
   font-size:11.5px;
   color:var(--ink-soft);
@@ -825,6 +858,10 @@ body{
   <!-- SETTINGS VIEW -->
   <div class="view" id="view-settings">
     <div class="settings-section">
+      <p class="settings-title">테마 색상</p>
+      <div class="theme-grid" id="themeGrid"></div>
+    </div>
+    <div class="settings-section">
       <p class="settings-title">카테고리 &amp; 예산 관리</p>
       <div id="catManageArea"></div>
       <div class="add-cat-row">
@@ -914,6 +951,14 @@ const DEFAULT_CATEGORIES = [
   {id:'etc', name:'기타', emoji:'✨', color:'#A08D7A', budget:0},
 ];
 
+const THEMES = [
+  { id:'vintage', name:'빈티지 브라운', vars:{bg:'#DDD7C9', brown:'#3B2A1E', brown2:'#5B4636', gold:'#C79A4B', card:'#FBF9F5', ink:'#2A211A', inkSoft:'#8A7D6F', line:'#E4DDCF'} },
+  { id:'navy', name:'모던 네이비', vars:{bg:'#EDEEF2', brown:'#1B2A4A', brown2:'#2F4066', gold:'#C9A66B', card:'#FFFFFF', ink:'#1C2333', inkSoft:'#8891A3', line:'#DFE2EA'} },
+  { id:'forest', name:'포레스트 그린', vars:{bg:'#E7E8DE', brown:'#1F3A2E', brown2:'#33513F', gold:'#B98A4E', card:'#F9FAF4', ink:'#20281F', inkSoft:'#83917E', line:'#DEE2D3'} },
+  { id:'rose', name:'더스티 로즈', vars:{bg:'#F1E6E0', brown:'#7D4F50', brown2:'#9A6A67', gold:'#8C9A6F', card:'#FFFBF9', ink:'#3A2523', inkSoft:'#9C837F', line:'#EBDAD3'} },
+  { id:'slate', name:'딥 슬레이트', vars:{bg:'#E4E6E7', brown:'#33404A', brown2:'#4C5C68', gold:'#D3A15C', card:'#FAFAFA', ink:'#222A30', inkSoft:'#8A949B', line:'#DCE0E2'} },
+];
+
 let state = {
   expenses: [],
   categories: [],
@@ -986,6 +1031,45 @@ function saveExpenses(){
 }
 function saveCategories(){
   localStorage.setItem('gagyebu:categories', JSON.stringify(state.categories));
+}
+
+/* ============ THEME ============ */
+function getSavedThemeId(){
+  return localStorage.getItem('gagyebu:theme') || 'vintage';
+}
+function applyTheme(themeId){
+  const theme = THEMES.find(t=>t.id===themeId) || THEMES[0];
+  const root = document.documentElement;
+  root.style.setProperty('--bg', theme.vars.bg);
+  root.style.setProperty('--brown', theme.vars.brown);
+  root.style.setProperty('--brown-2', theme.vars.brown2);
+  root.style.setProperty('--gold', theme.vars.gold);
+  root.style.setProperty('--card', theme.vars.card);
+  root.style.setProperty('--ink', theme.vars.ink);
+  root.style.setProperty('--ink-soft', theme.vars.inkSoft);
+  root.style.setProperty('--line', theme.vars.line);
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if(metaTheme) metaTheme.setAttribute('content', theme.vars.brown);
+}
+function setTheme(themeId){
+  localStorage.setItem('gagyebu:theme', themeId);
+  applyTheme(themeId);
+  renderThemeGrid();
+}
+function renderThemeGrid(){
+  const grid = document.getElementById('themeGrid');
+  if(!grid) return;
+  const current = getSavedThemeId();
+  grid.innerHTML = THEMES.map(t=>{
+    return `<div class="theme-card ${t.id===current?'selected':''}" onclick="setTheme('${t.id}')">
+      <div class="theme-swatches">
+        <div class="theme-swatch" style="background:${t.vars.brown};"></div>
+        <div class="theme-swatch" style="background:${t.vars.gold};"></div>
+        <div class="theme-swatch" style="background:${t.vars.bg};"></div>
+      </div>
+      <div class="theme-name">${t.id===current?'✓ ':''}${t.name}</div>
+    </div>`;
+  }).join('');
 }
 
 /* ============ HELPERS ============ */
@@ -1281,6 +1365,7 @@ function renderTrend(elId, type){
 
 /* ============ SETTINGS VIEW ============ */
 function renderSettings(){
+  renderThemeGrid();
   renderCatManage();
 }
 function renderCatManage(){
@@ -1642,6 +1727,7 @@ function deleteFromSheet(){
 }
 
 /* ============ INIT ============ */
+applyTheme(getSavedThemeId());
 loadData();
 render();
 
