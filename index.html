@@ -952,19 +952,10 @@ body{
       </div>
     </div>
     <div class="settings-section">
-      <p class="settings-title">자주 쓰는 메모</p>
-      <div class="memo-word-list" id="memoWordList"></div>
-      <div class="add-cat-row">
-        <input type="text" class="budget-input" id="newMemoWord" placeholder="예: 주유비, 하이패스" autocomplete="off">
-        <button onclick="addMemoWord()">추가</button>
-      </div>
-      <p class="settings-note">여기 등록한 단어와 지금까지 입력한 메모가 메모 칸에 추천으로 떠요. 첫 글자만 쳐도 돼요 (예: "주" → 주유비).</p>
-    </div>
-    <div class="settings-section">
       <p class="settings-title">데이터</p>
       <button class="settings-btn" onclick="exportData()">📤 데이터 내보내기 (백업)</button>
       <button class="settings-btn" onclick="document.getElementById('importFile').click()">📥 데이터 가져오기 (복원)</button>
-      <p class="settings-note" style="text-align:right;opacity:.7;">앱 버전 2026.10.01-2</p>
+      <p class="settings-note" style="text-align:right;opacity:.7;">앱 버전 2026.10.01-3</p>
       <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importData(event)">
       <p class="settings-note">모든 데이터는 이 기기의 브라우저(홈 화면 앱)에만 저장돼요. 앱 코드를 업데이트해서 새로 올려도 저장된 내역은 지워지지 않으니 안심하세요. 다만 브라우저 데이터를 직접 지우거나 홈 화면 아이콘을 삭제 후 재설치하면 지워질 수 있으니, 가끔 내보내기로 백업해두는 걸 추천해요.</p>
     </div>
