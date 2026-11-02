@@ -827,6 +827,9 @@ body{
 .memo-word-list{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:8px;}
 .memo-word{display:flex;align-items:center;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:6px 6px 6px 12px;font-size:12.5px;font-weight:700;color:var(--ink);}
 .memo-word button{border:none;background:transparent;color:var(--ink-soft);font-size:12px;cursor:pointer;padding:0 4px;}
+.excel-row{display:flex;gap:8px;align-items:stretch;margin-bottom:6px;}
+.excel-month{flex:1;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font-size:14px;font-family:inherit;}
+.excel-row button{flex-shrink:0;border:none;background:var(--brown);color:#fff;border-radius:12px;padding:0 16px;font-weight:700;font-size:13.5px;cursor:pointer;font-family:inherit;}
 .series-note{
   font-size:11px;
   color:var(--ink-soft);
@@ -952,10 +955,18 @@ body{
       </div>
     </div>
     <div class="settings-section">
+      <p class="settings-title">월별 엑셀 내보내기</p>
+      <div class="excel-row">
+        <input type="month" id="excelMonth" class="excel-month">
+        <button onclick="exportMonthExcel()">📊 엑셀 받기</button>
+      </div>
+      <p class="settings-note">고른 달의 내역을 엑셀(.xlsx)로 받아요. 요약 · 지출(카테고리별 건별 + 소계) · 수입(건별) 3개 시트로 나뉘어 있어요.</p>
+    </div>
+    <div class="settings-section">
       <p class="settings-title">데이터</p>
       <button class="settings-btn" onclick="exportData()">📤 데이터 내보내기 (백업)</button>
       <button class="settings-btn" onclick="document.getElementById('importFile').click()">📥 데이터 가져오기 (복원)</button>
-      <p class="settings-note" style="text-align:right;opacity:.7;">앱 버전 2026.10.01-3</p>
+      <p class="settings-note" style="text-align:right;opacity:.7;">앱 버전 2026.11.02-1</p>
       <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importData(event)">
       <p class="settings-note">모든 데이터는 이 기기의 브라우저(홈 화면 앱)에만 저장돼요. 앱 코드를 업데이트해서 새로 올려도 저장된 내역은 지워지지 않으니 안심하세요. 다만 브라우저 데이터를 직접 지우거나 홈 화면 아이콘을 삭제 후 재설치하면 지워질 수 있으니, 가끔 내보내기로 백업해두는 걸 추천해요.</p>
     </div>
@@ -1520,6 +1531,7 @@ function renderTrend(elId, type){
 
 /* ============ SETTINGS VIEW ============ */
 function renderSettings(){
+  syncExcelMonth();
   renderMemoWords();
   renderThemeGrid();
   renderCatManage();
@@ -1579,6 +1591,237 @@ function saveCategoryEdit(marker){
   document.getElementById('newCatBudget').value = '';
   renderCatManage();
   render();
+}
+
+/* ============ MONTHLY EXCEL EXPORT ============ */
+/* Builds a real .xlsx file inside the app (no internet / library needed).
+   Sheets: 요약 · 지출(카테고리별 건별 + 소계) · 수입(건별). Read-only: nothing is saved or changed. */
+function xlsxEsc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
+}
+function xlsxCol(i){ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; }
+function xlsxDateSerial(str){
+  const [y,m,d] = str.split('-').map(Number);
+  return (Date.UTC(y,m-1,d) - Date.UTC(1899,11,30)) / 86400000;
+}
+/* rows: array of arrays of cells. cell = {v, s, f} ; v string|number */
+function xlsxSheet(rows, opts){
+  opts = opts||{};
+  let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
+  if(opts.freezeRow){
+    xml += `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${opts.freezeRow}" topLeftCell="A${opts.freezeRow+1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`;
+  }else{
+    xml += '<sheetViews><sheetView workbookViewId="0"/></sheetViews>';
+  }
+  xml += '<sheetFormatPr defaultRowHeight="18"/>';
+  if(opts.widths) xml += '<cols>'+opts.widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')+'</cols>';
+  xml += '<sheetData>';
+  rows.forEach((row,ri)=>{
+    const r = ri+1;
+    xml += `<row r="${r}"${opts.titleRow===r?' ht="26" customHeight="1"':''}>`;
+    (row||[]).forEach((cell,ci)=>{
+      if(cell==null) return;
+      const ref = xlsxCol(ci)+r;
+      const s = cell.s ? ` s="${cell.s}"` : '';
+      if(cell.f!=null){
+        xml += `<c r="${ref}"${s}><f>${xlsxEsc(cell.f)}</f><v>${cell.v||0}</v></c>`;
+      }else if(typeof cell.v==='number'){
+        xml += `<c r="${ref}"${s}><v>${cell.v}</v></c>`;
+      }else if(cell.v===undefined || cell.v===''){
+        xml += `<c r="${ref}"${s}/>`;
+      }else{
+        xml += `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xlsxEsc(cell.v)}</t></is></c>`;
+      }
+    });
+    xml += '</row>';
+  });
+  xml += '</sheetData>';
+  if(opts.merges && opts.merges.length) xml += `<mergeCells count="${opts.merges.length}">`+opts.merges.map(m=>`<mergeCell ref="${m}"/>`).join('')+'</mergeCells>';
+  xml += '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/></worksheet>';
+  return xml;
+}
+const XLSX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+'<numFmts count="2"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/><numFmt numFmtId="165" formatCode="#,##0"/></numFmts>'+
+'<fonts count="5">'+
+ '<font><sz val="10"/><name val="맑은 고딕"/><family val="2"/></font>'+
+ '<font><b/><sz val="14"/><name val="맑은 고딕"/><family val="2"/></font>'+
+ '<font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="맑은 고딕"/><family val="2"/></font>'+
+ '<font><b/><sz val="10"/><name val="맑은 고딕"/><family val="2"/></font>'+
+ '<font><sz val="9"/><color rgb="FF808080"/><name val="맑은 고딕"/><family val="2"/></font>'+
+'</fonts>'+
+'<fills count="5">'+
+ '<fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'+
+ '<fill><patternFill patternType="solid"><fgColor rgb="FF1F2A44"/><bgColor indexed="64"/></patternFill></fill>'+
+ '<fill><patternFill patternType="solid"><fgColor rgb="FFEEF0F4"/><bgColor indexed="64"/></patternFill></fill>'+
+ '<fill><patternFill patternType="solid"><fgColor rgb="FFD9DEE7"/><bgColor indexed="64"/></patternFill></fill>'+
+'</fills>'+
+'<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'+
+ '<border><left style="thin"><color rgb="FFC9CED6"/></left><right style="thin"><color rgb="FFC9CED6"/></right><top style="thin"><color rgb="FFC9CED6"/></top><bottom style="thin"><color rgb="FFC9CED6"/></bottom><diagonal/></border></borders>'+
+'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
+'<cellXfs count="13">'+
+ '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+                                                   // 0 default
+ '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+                                     // 1 title
+ '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'+ // 2 header
+ '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>'+ // 3 text
+ '<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'+            // 4 number
+ '<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ // 5 date
+ '<xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>'+        // 6 subtotal label
+ '<xf numFmtId="165" fontId="3" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>'+ // 7 subtotal num
+ '<xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>'+        // 8 total label
+ '<xf numFmtId="165" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>'+ // 9 total num
+ '<xf numFmtId="10" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'+             // 10 percent
+ '<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+                                      // 11 note
+ '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ // 12 centered text
+'</cellXfs>'+
+'<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'+
+'</styleSheet>';
+
+/* minimal ZIP (stored, no compression) */
+const XLSX_CRC_TABLE = (()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320^(c>>>1)) : (c>>>1); t[n]=c>>>0; } return t; })();
+function xlsxCrc32(bytes){ let c=0xFFFFFFFF; for(let i=0;i<bytes.length;i++) c = XLSX_CRC_TABLE[(c^bytes[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function xlsxZip(files){
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  files.forEach(f=>{
+    const name = enc.encode(f.name), data = enc.encode(f.data), crc = xlsxCrc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(8,0,true);
+    lh.setUint16(10,0,true); lh.setUint16(12,0x21,true); lh.setUint32(14,crc,true);
+    lh.setUint32(18,data.length,true); lh.setUint32(22,data.length,true); lh.setUint16(26,name.length,true); lh.setUint16(28,0,true);
+    parts.push(new Uint8Array(lh.buffer), name, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(10,0,true);
+    ch.setUint16(12,0,true); ch.setUint16(14,0x21,true); ch.setUint32(16,crc,true); ch.setUint32(20,data.length,true); ch.setUint32(24,data.length,true);
+    ch.setUint16(28,name.length,true); ch.setUint16(30,0,true); ch.setUint16(32,0,true); ch.setUint16(34,0,true); ch.setUint16(36,0,true);
+    ch.setUint32(38,0,true); ch.setUint32(42,offset,true);
+    central.push(new Uint8Array(ch.buffer), name);
+    offset += 30 + name.length + data.length;
+  });
+  const cdSize = central.reduce((s,a)=>s+a.length,0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true); end.setUint16(8,files.length,true); end.setUint16(10,files.length,true);
+  end.setUint32(12,cdSize,true); end.setUint32(16,offset,true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function xlsxWorkbook(sheets){
+  const files = [
+    {name:'[Content_Types].xml', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+
+      sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')+'</Types>'},
+    {name:'_rels/.rels', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+    {name:'xl/workbook.xml', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>'+
+      sheets.map((s,i)=>`<sheet name="${xlsxEsc(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')+'</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>'},
+    {name:'xl/_rels/workbook.xml.rels', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+      sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')+
+      `<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`},
+    {name:'xl/styles.xml', data:XLSX_STYLES},
+  ];
+  sheets.forEach((s,i)=>files.push({name:`xl/worksheets/sheet${i+1}.xml`, data:s.xml}));
+  return xlsxZip(files);
+}
+
+function recurLabel(e){
+  if(e.recurrenceType==='fixed') return `고정비 (${e.seriesIndex||'-'}/${e.seriesTotal||'-'})`;
+  if(e.recurrenceType==='installment') return `할부 (${e.seriesIndex||'-'}/${e.seriesTotal||'-'})`;
+  return '일반';
+}
+function buildMonthWorkbook(monthStr){
+  const [yy,mm] = monthStr.split('-');
+  const title = `${yy}년 ${Number(mm)}월 가계부`;
+  const items = monthExpenses(monthStr).slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const expenses = items.filter(e=>(e.type||'expense')==='expense');
+  const incomes  = items.filter(e=>(e.type||'expense')==='income');
+  const totalExp = expenses.reduce((s,e)=>s+e.amount,0);
+  const totalInc = incomes.reduce((s,e)=>s+e.amount,0);
+  const T = v=>({v, s:3}), N = v=>({v:Number(v)||0, s:4}), D = d=>({v:xlsxDateSerial(d), s:5}), H = v=>({v, s:2}), C = v=>({v, s:12});
+
+  // category order = app's category order, then any leftover ids
+  // 삭제됐거나 없는 카테고리는 '미분류'로 한데 모음
+  const known = new Set(state.categories.map(c=>c.id));
+  const catKey = e => known.has(e.category) ? e.category : '__none__';
+  const order = state.categories.map(c=>c.id).concat('__none__');
+  const groups = order.map(id=>({id, info: id==='__none__'?{name:'미분류'}:catInfo(id),
+    list: expenses.filter(e=>catKey(e)===id)})).filter(g=>g.list.length);
+
+  /* ---- 지출 sheet ---- */
+  const ex = [[{v:`${title} — 지출 내역`, s:1}], [{v:`카테고리별로 묶고 날짜순 정렬 · 총 ${expenses.length}건`, s:11}],
+    [H('날짜'),H('카테고리'),H('메모'),H('구분'),H('금액')]];
+  const subRefs = [];
+  groups.forEach(g=>{
+    const start = ex.length+1;
+    g.list.forEach(e=>ex.push([D(e.date), T(g.info.name), T(e.memo||''), C(recurLabel(e)), N(e.amount)]));
+    const end = ex.length;
+    const sum = g.list.reduce((s,e)=>s+e.amount,0);
+    ex.push([{v:'',s:6},{v:`${g.info.name} 소계`,s:6},{v:`${g.list.length}건`,s:6},{v:'',s:6},{f:`SUM(E${start}:E${end})`, v:sum, s:7}]);
+    subRefs.push('E'+ex.length);
+  });
+  ex.push([{v:'',s:8},{v:'지출 합계',s:8},{v:`${expenses.length}건`,s:8},{v:'',s:8},
+    {f: subRefs.length? subRefs.join('+') : '0', v:totalExp, s:9}]);
+
+  /* ---- 수입 sheet ---- */
+  const inc = [[{v:`${title} — 수입 내역`, s:1}], [{v:`날짜순 정렬 · 총 ${incomes.length}건`, s:11}],
+    [H('날짜'),H('내용(메모)'),H('금액')]];
+  const iStart = inc.length+1;
+  incomes.forEach(e=>inc.push([D(e.date), T(e.memo||''), N(e.amount)]));
+  const iEnd = inc.length;
+  inc.push([{v:'',s:8},{v:`수입 합계 (${incomes.length}건)`,s:8},{f: incomes.length?`SUM(C${iStart}:C${iEnd})`:'0', v:totalInc, s:9}]);
+
+  /* ---- 요약 sheet ---- */
+  const sm = [[{v:title, s:1}], [{v:`내보낸 날짜 ${todayStr()}`, s:11}], [],
+    [H('구분'),H('금액')],
+    [T('총수입'), N(totalInc)], [T('총지출'), N(totalExp)],
+    [{v:'잔액',s:8},{f:'B5-B6', v:totalInc-totalExp, s:9}], [],
+    [H('카테고리'),H('건수'),H('지출액'),H('예산'),H('예산 대비'),H('지출 비중')]];
+  const cStart = sm.length+1;
+  groups.forEach(g=>{
+    const r = sm.length+1;
+    const amt = g.list.reduce((s,e)=>s+e.amount,0);
+    const budget = Number(g.info.budget)||0;
+    sm.push([T(g.info.name), {v:g.list.length, s:12}, N(amt),
+      budget ? N(budget) : T(''),
+      budget ? {f:`C${r}/D${r}`, v:amt/budget, s:10} : T(''),
+      {f: totalExp?`C${r}/$C$${cStart+groups.length}`:'0', v: totalExp? amt/totalExp : 0, s:10}]);
+  });
+  const cEnd = sm.length;
+  sm.push([{v:'합계',s:8},{f:groups.length?`SUM(B${cStart}:B${cEnd})`:'0', v:expenses.length, s:9},
+    {f:groups.length?`SUM(C${cStart}:C${cEnd})`:'0', v:totalExp, s:9},{v:'',s:8},{v:'',s:8},{v:'',s:8}]);
+
+  return xlsxWorkbook([
+    {name:'요약', xml:xlsxSheet(sm, {widths:[16,9,15,15,11,11], titleRow:1})},
+    {name:'지출', xml:xlsxSheet(ex, {widths:[12,14,28,14,14], freezeRow:3, titleRow:1})},
+    {name:'수입', xml:xlsxSheet(inc, {widths:[12,30,14], freezeRow:3, titleRow:1})},
+  ]);
+}
+async function exportMonthExcel(){
+  const monthStr = document.getElementById('excelMonth').value || state.currentMonth;
+  if(monthExpenses(monthStr).length===0){
+    if(!confirm(`${monthStr.replace('-','년 ')}월에는 내역이 없어요. 빈 파일이라도 받을까요?`)) return;
+  }
+  const blob = buildMonthWorkbook(monthStr);
+  const [yy,mm] = monthStr.split('-');
+  const fileName = `가계부_${yy}년${mm}월.xlsx`;
+  // 폰에서는 공유창(파일에 저장 · 카톡 등)으로, PC에서는 바로 다운로드
+  try{
+    const file = new File([blob], fileName, {type: blob.type});
+    if(navigator.maxTouchPoints>0 && navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:fileName});
+      return;
+    }
+  }catch(err){
+    if(err && err.name==='AbortError') return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function syncExcelMonth(){
+  const el = document.getElementById('excelMonth');
+  if(el) el.value = state.currentMonth;
 }
 
 /* ============ EXPORT / IMPORT ============ */
