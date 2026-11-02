@@ -829,6 +829,7 @@ body{
 .memo-word button{border:none;background:transparent;color:var(--ink-soft);font-size:12px;cursor:pointer;padding:0 4px;}
 .excel-row{display:flex;gap:8px;align-items:stretch;margin-bottom:6px;}
 .excel-month{flex:1;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font-size:14px;font-family:inherit;}
+.excel-tilde{align-self:center;color:var(--ink-soft);font-weight:700;}
 .excel-row button{flex-shrink:0;border:none;background:var(--brown);color:#fff;border-radius:12px;padding:0 16px;font-weight:700;font-size:13.5px;cursor:pointer;font-family:inherit;}
 .series-note{
   font-size:11px;
@@ -955,18 +956,20 @@ body{
       </div>
     </div>
     <div class="settings-section">
-      <p class="settings-title">월별 엑셀 내보내기</p>
+      <p class="settings-title">엑셀 내보내기</p>
       <div class="excel-row">
-        <input type="month" id="excelMonth" class="excel-month">
-        <button onclick="exportMonthExcel()">📊 엑셀 받기</button>
+        <input type="month" id="excelStart" class="excel-month">
+        <span class="excel-tilde">~</span>
+        <input type="month" id="excelEnd" class="excel-month">
       </div>
-      <p class="settings-note">고른 달의 내역을 엑셀(.xlsx)로 받아요. 요약 · 지출(카테고리별 건별 + 소계) · 수입(건별) 3개 시트로 나뉘어 있어요.</p>
+      <button class="settings-btn" onclick="exportExcel()">📊 엑셀 받기 (대시보드 + 월별 시트)</button>
+      <p class="settings-note">고른 기간의 내역을 엑셀(.xlsx)로 받아요. 맨 앞 '대시보드' 시트에 월별 그래프가 있고, 그 뒤로 한 달에 한 시트씩(요약 · 카테고리 · 지출 · 수입) 들어가요. 새 달이 생기면 기간을 늘려 다시 받으면 돼요.</p>
     </div>
     <div class="settings-section">
       <p class="settings-title">데이터</p>
       <button class="settings-btn" onclick="exportData()">📤 데이터 내보내기 (백업)</button>
       <button class="settings-btn" onclick="document.getElementById('importFile').click()">📥 데이터 가져오기 (복원)</button>
-      <p class="settings-note" style="text-align:right;opacity:.7;">앱 버전 2026.11.02-1</p>
+      <p class="settings-note" style="text-align:right;opacity:.7;">앱 버전 2026.11.02-2</p>
       <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importData(event)">
       <p class="settings-note">모든 데이터는 이 기기의 브라우저(홈 화면 앱)에만 저장돼요. 앱 코드를 업데이트해서 새로 올려도 저장된 내역은 지워지지 않으니 안심하세요. 다만 브라우저 데이터를 직접 지우거나 홈 화면 아이콘을 삭제 후 재설치하면 지워질 수 있으니, 가끔 내보내기로 백업해두는 걸 추천해요.</p>
     </div>
@@ -1593,9 +1596,11 @@ function saveCategoryEdit(marker){
   render();
 }
 
-/* ============ MONTHLY EXCEL EXPORT ============ */
+/* ============ EXCEL EXPORT (월별 시트 + 대시보드) ============ */
 /* Builds a real .xlsx file inside the app (no internet / library needed).
-   Sheets: 요약 · 지출(카테고리별 건별 + 소계) · 수입(건별). Read-only: nothing is saved or changed. */
+   Sheet 1 '대시보드' = 기간 요약 + 그래프 4개 + 월별 표 (월별 시트 숫자를 수식으로 참조)
+   Sheet 2~ 'YYYY.MM' = 그 달의 요약 · 카테고리 · 지출 내역(카테고리별 건별+소계) · 수입 내역을 한 시트에.
+   Read-only: the app's saved data is never changed. */
 function xlsxEsc(s){
   return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
@@ -1605,28 +1610,27 @@ function xlsxDateSerial(str){
   const [y,m,d] = str.split('-').map(Number);
   return (Date.UTC(y,m-1,d) - Date.UTC(1899,11,30)) / 86400000;
 }
-/* rows: array of arrays of cells. cell = {v, s, f} ; v string|number */
+/* grid: sparse rows[r][c] (0-based) of {v, s, f} */
 function xlsxSheet(rows, opts){
   opts = opts||{};
   let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
     '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
-  if(opts.freezeRow){
-    xml += `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${opts.freezeRow}" topLeftCell="A${opts.freezeRow+1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`;
-  }else{
-    xml += '<sheetViews><sheetView workbookViewId="0"/></sheetViews>';
-  }
+  if(opts.tabColor || opts.fit) xml += '<sheetPr>'+(opts.tabColor?`<tabColor rgb="FF${opts.tabColor}"/>`:'')+(opts.fit?'<pageSetUpPr fitToPage="1"/>':'')+'</sheetPr>';
+  xml += `<sheetViews><sheetView workbookViewId="0"${opts.showGrid===false?' showGridLines="0"':''}${opts.selected?' tabSelected="1"':''}/></sheetViews>`;
   xml += '<sheetFormatPr defaultRowHeight="18"/>';
   if(opts.widths) xml += '<cols>'+opts.widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')+'</cols>';
   xml += '<sheetData>';
-  rows.forEach((row,ri)=>{
-    const r = ri+1;
-    xml += `<row r="${r}"${opts.titleRow===r?' ht="26" customHeight="1"':''}>`;
+  for(let ri=0; ri<rows.length; ri++){
+    const row = rows[ri]; const r = ri+1;
+    const ht = (opts.heights||{})[r];
+    if(!row && !ht) continue;
+    xml += `<row r="${r}"${ht?` ht="${ht}" customHeight="1"`:''}>`;
     (row||[]).forEach((cell,ci)=>{
       if(cell==null) return;
       const ref = xlsxCol(ci)+r;
       const s = cell.s ? ` s="${cell.s}"` : '';
       if(cell.f!=null){
-        xml += `<c r="${ref}"${s}><f>${xlsxEsc(cell.f)}</f><v>${cell.v||0}</v></c>`;
+        xml += `<c r="${ref}"${s}><f>${xlsxEsc(cell.f)}</f><v>${Number(cell.v)||0}</v></c>`;
       }else if(typeof cell.v==='number'){
         xml += `<c r="${ref}"${s}><v>${cell.v}</v></c>`;
       }else if(cell.v===undefined || cell.v===''){
@@ -1636,48 +1640,122 @@ function xlsxSheet(rows, opts){
       }
     });
     xml += '</row>';
-  });
+  }
   xml += '</sheetData>';
   if(opts.merges && opts.merges.length) xml += `<mergeCells count="${opts.merges.length}">`+opts.merges.map(m=>`<mergeCell ref="${m}"/>`).join('')+'</mergeCells>';
-  xml += '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/></worksheet>';
+  xml += '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>';
+  if(opts.fit) xml += `<pageSetup paperSize="9" orientation="${opts.fit}" fitToWidth="1" fitToHeight="0"/>`;
+  if(opts.drawing) xml += '<drawing r:id="rId1"/>';
+  xml += '</worksheet>';
   return xml;
 }
+const XLSX_FONT = '<name val="맑은 고딕"/><family val="2"/><charset val="129"/>';
 const XLSX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
 '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
 '<numFmts count="2"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/><numFmt numFmtId="165" formatCode="#,##0"/></numFmts>'+
-'<fonts count="5">'+
- '<font><sz val="10"/><name val="맑은 고딕"/><family val="2"/></font>'+
- '<font><b/><sz val="14"/><name val="맑은 고딕"/><family val="2"/></font>'+
- '<font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="맑은 고딕"/><family val="2"/></font>'+
- '<font><b/><sz val="10"/><name val="맑은 고딕"/><family val="2"/></font>'+
- '<font><sz val="9"/><color rgb="FF808080"/><name val="맑은 고딕"/><family val="2"/></font>'+
+'<fonts count="7">'+
+ `<font><sz val="10"/>${XLSX_FONT}</font>`+
+ `<font><b/><sz val="15"/><color rgb="FF1F2A44"/>${XLSX_FONT}</font>`+
+ `<font><b/><sz val="10"/><color rgb="FFFFFFFF"/>${XLSX_FONT}</font>`+
+ `<font><b/><sz val="10"/>${XLSX_FONT}</font>`+
+ `<font><sz val="9"/><color rgb="FF808080"/>${XLSX_FONT}</font>`+
+ `<font><b/><sz val="11"/><color rgb="FF1F2A44"/>${XLSX_FONT}</font>`+
+ `<font><b/><sz val="14"/><color rgb="FF1F2A44"/>${XLSX_FONT}</font>`+
 '</fonts>'+
-'<fills count="5">'+
+'<fills count="6">'+
  '<fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'+
  '<fill><patternFill patternType="solid"><fgColor rgb="FF1F2A44"/><bgColor indexed="64"/></patternFill></fill>'+
  '<fill><patternFill patternType="solid"><fgColor rgb="FFEEF0F4"/><bgColor indexed="64"/></patternFill></fill>'+
  '<fill><patternFill patternType="solid"><fgColor rgb="FFD9DEE7"/><bgColor indexed="64"/></patternFill></fill>'+
+ '<fill><patternFill patternType="solid"><fgColor rgb="FFF6F7F9"/><bgColor indexed="64"/></patternFill></fill>'+
 '</fills>'+
 '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'+
  '<border><left style="thin"><color rgb="FFC9CED6"/></left><right style="thin"><color rgb="FFC9CED6"/></right><top style="thin"><color rgb="FFC9CED6"/></top><bottom style="thin"><color rgb="FFC9CED6"/></bottom><diagonal/></border></borders>'+
 '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
-'<cellXfs count="13">'+
- '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+                                                   // 0 default
- '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+                                     // 1 title
- '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'+ // 2 header
- '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>'+ // 3 text
- '<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'+            // 4 number
- '<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ // 5 date
- '<xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>'+        // 6 subtotal label
- '<xf numFmtId="165" fontId="3" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>'+ // 7 subtotal num
- '<xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>'+        // 8 total label
- '<xf numFmtId="165" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>'+ // 9 total num
- '<xf numFmtId="10" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'+             // 10 percent
- '<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+                                      // 11 note
- '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ // 12 centered text
+'<cellXfs count="16">'+
+ '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+                                                   /* 0 default */
+ '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+                                     /* 1 title */
+ '<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'+ /* 2 header */
+ '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>'+ /* 3 text */
+ '<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'+            /* 4 number */
+ '<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ /* 5 date */
+ '<xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>'+        /* 6 subtotal label */
+ '<xf numFmtId="165" fontId="3" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>'+ /* 7 subtotal num */
+ '<xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>'+        /* 8 total label */
+ '<xf numFmtId="165" fontId="3" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>'+ /* 9 total num */
+ '<xf numFmtId="10" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>'+             /* 10 percent */
+ '<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+                                      /* 11 note */
+ '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'+ /* 12 centered */
+ '<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+                                      /* 13 section */
+ '<xf numFmtId="0" fontId="4" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'+ /* 14 KPI label */
+ '<xf numFmtId="165" fontId="6" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'+ /* 15 KPI value */
 '</cellXfs>'+
 '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'+
 '</styleSheet>';
+
+/* ---- charts (DrawingML) ---- */
+function chStrCache(vals){ return `<c:strCache><c:ptCount val="${vals.length}"/>`+vals.map((v,i)=>`<c:pt idx="${i}"><c:v>${xlsxEsc(v)}</c:v></c:pt>`).join('')+'</c:strCache>'; }
+function chNumCache(vals){ return `<c:numCache><c:formatCode>General</c:formatCode><c:ptCount val="${vals.length}"/>`+vals.map((v,i)=>`<c:pt idx="${i}"><c:v>${Number(v)||0}</c:v></c:pt>`).join('')+'</c:numCache>'; }
+function chFill(hex){ return `<c:spPr><a:solidFill><a:srgbClr val="${hex}"/></a:solidFill></c:spPr>`; }
+function chSerCore(s, i){
+  return `<c:idx val="${i}"/><c:order val="${i}"/><c:tx><c:strRef><c:f>${xlsxEsc(s.nameRef)}</c:f>${chStrCache([s.name])}</c:strRef></c:tx>`;
+}
+function chCatVal(cat, s){
+  return `<c:cat><c:strRef><c:f>${xlsxEsc(cat.ref)}</c:f>${chStrCache(cat.vals)}</c:strRef></c:cat>`+
+         `<c:val><c:numRef><c:f>${xlsxEsc(s.ref)}</c:f>${chNumCache(s.vals)}</c:numRef></c:val>`;
+}
+function chTitle(t){
+  return `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1200" b="1"/></a:pPr><a:r><a:rPr lang="ko-KR" sz="1200" b="1"><a:solidFill><a:srgbClr val="1F2A44"/></a:solidFill></a:rPr><a:t>${xlsxEsc(t)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>`;
+}
+function chAxes(horizontal){
+  const catPos = horizontal?'l':'b', valPos = horizontal?'b':'l';
+  return `<c:catAx><c:axId val="5001"/><c:scaling><c:orientation val="${horizontal?'maxMin':'minMax'}"/></c:scaling><c:delete val="0"/><c:axPos val="${catPos}"/><c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/><c:spPr><a:ln w="6350"><a:solidFill><a:srgbClr val="C9CED6"/></a:solidFill></a:ln></c:spPr><c:crossAx val="5002"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx>`+
+    `<c:valAx><c:axId val="5002"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="${valPos}"/><c:majorGridlines><c:spPr><a:ln w="6350"><a:solidFill><a:srgbClr val="E6E8EC"/></a:solidFill></a:ln></c:spPr></c:majorGridlines><c:numFmt formatCode="#,##0" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr><c:crossAx val="5001"/><c:crosses val="${horizontal?'max':'autoZero'}"/><c:crossBetween val="between"/></c:valAx>`;
+}
+function chWrap(title, plot, legend){
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+  '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'+
+  '<c:roundedCorners val="0"/><c:chart>'+chTitle(title)+'<c:autoTitleDeleted val="0"/><c:plotArea><c:layout/>'+plot+'</c:plotArea>'+
+  (legend?'<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>':'')+
+  '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>'+
+  '<c:spPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="D9DEE7"/></a:solidFill></a:ln></c:spPr>'+
+  '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"><a:solidFill><a:srgbClr val="4A5361"/></a:solidFill><a:latin typeface="맑은 고딕"/><a:ea typeface="맑은 고딕"/></a:defRPr></a:pPr><a:endParaRPr lang="ko-KR"/></a:p></c:txPr>'+
+  '</c:chartSpace>';
+}
+/* opts: {title, cat:{ref,vals}, bars:[{name,nameRef,ref,vals,color}], lines:[...], stacked, horizontal} */
+function chartBar(o){
+  let plot = `<c:barChart><c:barDir val="${o.horizontal?'bar':'col'}"/><c:grouping val="${o.stacked?'stacked':'clustered'}"/><c:varyColors val="0"/>`;
+  o.bars.forEach((s,i)=>{ plot += '<c:ser>'+chSerCore(s,i)+chFill(s.color)+'<c:invertIfNegative val="0"/>'+chCatVal(o.cat,s)+'</c:ser>'; });
+  plot += `<c:gapWidth val="${o.stacked?60:90}"/>${o.stacked?'<c:overlap val="100"/>':''}<c:axId val="5001"/><c:axId val="5002"/></c:barChart>`;
+  if(o.lines && o.lines.length){
+    plot += '<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>';
+    o.lines.forEach((s,j)=>{ const i=o.bars.length+j;
+      plot += '<c:ser>'+chSerCore(s,i)+`<c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="${s.color}"/></a:solidFill><a:round/></a:ln></c:spPr>`+
+        `<c:marker><c:symbol val="circle"/><c:size val="6"/><c:spPr><a:solidFill><a:srgbClr val="${s.color}"/></a:solidFill><a:ln><a:noFill/></a:ln></c:spPr></c:marker>`+
+        chCatVal(o.cat,s)+'<c:smooth val="0"/></c:ser>'; });
+    plot += '<c:marker val="1"/><c:axId val="5001"/><c:axId val="5002"/></c:lineChart>';
+  }
+  plot += chAxes(o.horizontal);
+  return chWrap(o.title, plot, o.legend!==false);
+}
+function chartPie(o){ /* {title, cat, ser:{name,nameRef,ref,vals}, colors[]} */
+  let plot = '<c:doughnutChart><c:varyColors val="1"/><c:ser>'+chSerCore(o.ser,0)+
+    o.colors.map((c,i)=>`<c:dPt><c:idx val="${i}"/><c:bubble3D val="0"/><c:spPr><a:solidFill><a:srgbClr val="${c}"/></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:ln></c:spPr></c:dPt>`).join('')+
+    '<c:dLbls><c:numFmt formatCode="0%" sourceLinked="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900" b="1"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="ko-KR"/></a:p></c:txPr><c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="1"/><c:showBubbleSize val="0"/><c:showLeaderLines val="0"/></c:dLbls>'+
+    chCatVal(o.cat,o.ser)+'</c:ser><c:firstSliceAng val="0"/><c:holeSize val="50"/></c:doughnutChart>';
+  return chWrap(o.title, plot, true).replace('<c:legendPos val="b"/>','<c:legendPos val="r"/>');
+}
+function drawingXml(charts){
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+  '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'+
+  charts.map((c,i)=>`<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>${c.from[0]}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${c.from[1]}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>`+
+    `<xdr:to><xdr:col>${c.to[0]}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${c.to[1]}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>`+
+    `<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="${i+2}" name="Chart ${i+1}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>`+
+    '<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">'+
+    `<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId${i+1}"/>`+
+    '</a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>').join('')+
+  '</xdr:wsDr>';
+}
 
 /* minimal ZIP (stored, no compression) */
 const XLSX_CRC_TABLE = (()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320^(c>>>1)) : (c>>>1); t[n]=c>>>0; } return t; })();
@@ -1707,28 +1785,65 @@ function xlsxZip(files){
   end.setUint32(12,cdSize,true); end.setUint32(16,offset,true);
   return new Blob([...parts, ...central, new Uint8Array(end.buffer)], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }
+const XLSX_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
+function xlsxRels(list){
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+    list.map(r=>`<Relationship Id="${r.id}" Type="${XLSX_REL}${r.type}" Target="${r.target}"/>`).join('')+'</Relationships>';
+}
+/* sheets: [{name, xml, charts?:[{xml, from:[col,row], to:[col,row]}]}] */
 function xlsxWorkbook(sheets){
+  const extra = [], over = [];
+  let chartNo = 0, drawNo = 0;
+  sheets.forEach((s,i)=>{
+    over.push(`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`);
+    if(s.charts && s.charts.length){
+      drawNo++;
+      extra.push({name:`xl/worksheets/_rels/sheet${i+1}.xml.rels`, data:xlsxRels([{id:'rId1', type:'drawing', target:`../drawings/drawing${drawNo}.xml`}])});
+      const cr = [];
+      s.charts.forEach((c,ci)=>{
+        chartNo++;
+        extra.push({name:`xl/charts/chart${chartNo}.xml`, data:c.xml});
+        over.push(`<Override PartName="/xl/charts/chart${chartNo}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`);
+        cr.push({id:'rId'+(ci+1), type:'chart', target:`../charts/chart${chartNo}.xml`});
+      });
+      extra.push({name:`xl/drawings/drawing${drawNo}.xml`, data:drawingXml(s.charts)});
+      extra.push({name:`xl/drawings/_rels/drawing${drawNo}.xml.rels`, data:xlsxRels(cr)});
+      over.push(`<Override PartName="/xl/drawings/drawing${drawNo}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`);
+    }
+  });
   const files = [
-    {name:'[Content_Types].xml', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+
-      sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')+'</Types>'},
-    {name:'_rels/.rels', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
-    {name:'xl/workbook.xml', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>'+
+    {name:'[Content_Types].xml', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+over.join('')+'</Types>'},
+    {name:'_rels/.rels', data:xlsxRels([{id:'rId1', type:'officeDocument', target:'xl/workbook.xml'}])},
+    {name:'xl/workbook.xml', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets>'+
       sheets.map((s,i)=>`<sheet name="${xlsxEsc(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')+'</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>'},
-    {name:'xl/_rels/workbook.xml.rels', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
-      sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')+
-      `<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`},
+    {name:'xl/_rels/workbook.xml.rels', data:xlsxRels(sheets.map((s,i)=>({id:'rId'+(i+1), type:'worksheet', target:`worksheets/sheet${i+1}.xml`})).concat([{id:'rId'+(sheets.length+1), type:'styles', target:'styles.xml'}]))},
     {name:'xl/styles.xml', data:XLSX_STYLES},
   ];
   sheets.forEach((s,i)=>files.push({name:`xl/worksheets/sheet${i+1}.xml`, data:s.xml}));
-  return xlsxZip(files);
+  return xlsxZip(files.concat(extra));
 }
 
+/* ---- data helpers ---- */
 function recurLabel(e){
   if(e.recurrenceType==='fixed') return `고정비 (${e.seriesIndex||'-'}/${e.seriesTotal||'-'})`;
   if(e.recurrenceType==='installment') return `할부 (${e.seriesIndex||'-'}/${e.seriesTotal||'-'})`;
   return '일반';
 }
-function buildMonthWorkbook(monthStr){
+function monthRange(start, end){
+  const out = []; let [y,m] = start.split('-').map(Number); const [ey,em] = end.split('-').map(Number);
+  while(y<ey || (y===ey && m<=em)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} if(out.length>240) break; }
+  return out;
+}
+const XLSX_PALETTE = ['D97757','5B8DB8','C77DAE','8A9B6E','E4756A','7B6CC1','C79A4B','5B4636','4E8B7B','3E7D5C','A08D7A','2F6690','B5651D','6A994E','9D4EDD'];
+function catColorHex(info, i){
+  const c = (info && info.color) ? String(info.color).replace('#','').toUpperCase() : '';
+  return /^[0-9A-F]{6}$/.test(c) ? c : XLSX_PALETTE[i % XLSX_PALETTE.length];
+}
+function sheetRef(name, ref){ return `'${name.replace(/'/g,"''")}'!${ref}`; }
+function absRef(col,row){ return '$'+xlsxCol(col)+'$'+row; }
+
+/* one month → one sheet (요약 + 카테고리 + 지출 + 수입). Returns grid + cell addresses the dashboard links to. */
+function buildMonthSheet(monthStr, catOrder){
   const [yy,mm] = monthStr.split('-');
   const title = `${yy}년 ${Number(mm)}월 가계부`;
   const items = monthExpenses(monthStr).slice().sort((a,b)=>a.date.localeCompare(b.date));
@@ -1736,73 +1851,189 @@ function buildMonthWorkbook(monthStr){
   const incomes  = items.filter(e=>(e.type||'expense')==='income');
   const totalExp = expenses.reduce((s,e)=>s+e.amount,0);
   const totalInc = incomes.reduce((s,e)=>s+e.amount,0);
-  const T = v=>({v, s:3}), N = v=>({v:Number(v)||0, s:4}), D = d=>({v:xlsxDateSerial(d), s:5}), H = v=>({v, s:2}), C = v=>({v, s:12});
-
-  // category order = app's category order, then any leftover ids
-  // 삭제됐거나 없는 카테고리는 '미분류'로 한데 모음
   const known = new Set(state.categories.map(c=>c.id));
   const catKey = e => known.has(e.category) ? e.category : '__none__';
-  const order = state.categories.map(c=>c.id).concat('__none__');
-  const groups = order.map(id=>({id, info: id==='__none__'?{name:'미분류'}:catInfo(id),
+  const groups = catOrder.map(id=>({id, info: id==='__none__'?{name:'미분류'}:catInfo(id),
     list: expenses.filter(e=>catKey(e)===id)})).filter(g=>g.list.length);
 
-  /* ---- 지출 sheet ---- */
-  const ex = [[{v:`${title} — 지출 내역`, s:1}], [{v:`카테고리별로 묶고 날짜순 정렬 · 총 ${expenses.length}건`, s:11}],
-    [H('날짜'),H('카테고리'),H('메모'),H('구분'),H('금액')]];
-  const subRefs = [];
-  groups.forEach(g=>{
-    const start = ex.length+1;
-    g.list.forEach(e=>ex.push([D(e.date), T(g.info.name), T(e.memo||''), C(recurLabel(e)), N(e.amount)]));
-    const end = ex.length;
-    const sum = g.list.reduce((s,e)=>s+e.amount,0);
-    ex.push([{v:'',s:6},{v:`${g.info.name} 소계`,s:6},{v:`${g.list.length}건`,s:6},{v:'',s:6},{f:`SUM(E${start}:E${end})`, v:sum, s:7}]);
-    subRefs.push('E'+ex.length);
+  const g = []; const put = (r,c,cell)=>{ (g[r-1] = g[r-1]||[])[c] = cell; };   // r is 1-based
+  const T = v=>({v, s:3}), N = v=>({v:Number(v)||0, s:4}), D = d=>({v:xlsxDateSerial(d), s:5}), H = v=>({v, s:2}), C = v=>({v, s:12});
+
+  put(1,0,{v:title, s:1});
+  put(2,0,{v:`지출 ${expenses.length}건 · 수입 ${incomes.length}건 · 내보낸 날짜 ${todayStr()}`, s:11});
+
+  // 요약 (A4:B7)
+  put(4,0,H('구분')); put(4,1,H('금액'));
+  put(5,0,T('총수입')); put(6,0,T('총지출')); put(7,0,{v:'잔액',s:8});
+  // 카테고리 표 (D4:H…)
+  ['카테고리','건수','지출액','예산','예산 대비'].forEach((h,i)=>put(4,3+i,H(h)));
+  const catRowStart = 5;
+
+  // 지출 내역
+  let r = Math.max(8, catRowStart + groups.length + 1) + 2;
+  put(r,0,{v:'■ 지출 내역 (카테고리별 · 날짜순)', s:13}); r++;
+  ['날짜','카테고리','메모','구분','금액'].forEach((h,i)=>put(r,i,H(h))); r++;
+  const subtotalRow = {}; const subRefs = [];
+  groups.forEach(gr=>{
+    const start = r;
+    gr.list.forEach(e=>{ put(r,0,D(e.date)); put(r,1,T(gr.info.name)); put(r,2,T(e.memo||'')); put(r,3,C(recurLabel(e))); put(r,4,N(e.amount)); r++; });
+    const sum = gr.list.reduce((s,e)=>s+e.amount,0);
+    put(r,0,{v:'',s:6}); put(r,1,{v:`${gr.info.name} 소계`,s:6}); put(r,2,{v:`${gr.list.length}건`,s:6}); put(r,3,{v:'',s:6});
+    put(r,4,{f:`SUM(E${start}:E${r-1})`, v:sum, s:7});
+    subtotalRow[gr.id] = {row:r, sum}; subRefs.push('E'+r); r++;
   });
-  ex.push([{v:'',s:8},{v:'지출 합계',s:8},{v:`${expenses.length}건`,s:8},{v:'',s:8},
-    {f: subRefs.length? subRefs.join('+') : '0', v:totalExp, s:9}]);
+  const expTotalRow = r;
+  put(r,0,{v:'',s:8}); put(r,1,{v:'지출 합계',s:8}); put(r,2,{v:`${expenses.length}건`,s:8}); put(r,3,{v:'',s:8});
+  put(r,4,{f: subRefs.length? subRefs.join('+') : '0', v:totalExp, s:9}); r += 3;
 
-  /* ---- 수입 sheet ---- */
-  const inc = [[{v:`${title} — 수입 내역`, s:1}], [{v:`날짜순 정렬 · 총 ${incomes.length}건`, s:11}],
-    [H('날짜'),H('내용(메모)'),H('금액')]];
-  const iStart = inc.length+1;
-  incomes.forEach(e=>inc.push([D(e.date), T(e.memo||''), N(e.amount)]));
-  const iEnd = inc.length;
-  inc.push([{v:'',s:8},{v:`수입 합계 (${incomes.length}건)`,s:8},{f: incomes.length?`SUM(C${iStart}:C${iEnd})`:'0', v:totalInc, s:9}]);
+  // 수입 내역
+  put(r,0,{v:'■ 수입 내역 (날짜순)', s:13}); r++;
+  ['날짜','항목','메모','구분','금액'].forEach((h,i)=>put(r,i,H(h))); r++;
+  const iStart = r;
+  incomes.forEach(e=>{ put(r,0,D(e.date)); put(r,1,T('수입')); put(r,2,T(e.memo||'')); put(r,3,C('일반')); put(r,4,N(e.amount)); r++; });
+  const incTotalRow = r;
+  put(r,0,{v:'',s:8}); put(r,1,{v:'수입 합계',s:8}); put(r,2,{v:`${incomes.length}건`,s:8}); put(r,3,{v:'',s:8});
+  put(r,4,{f: incomes.length?`SUM(E${iStart}:E${r-1})`:'0', v:totalInc, s:9});
 
-  /* ---- 요약 sheet ---- */
-  const sm = [[{v:title, s:1}], [{v:`내보낸 날짜 ${todayStr()}`, s:11}], [],
-    [H('구분'),H('금액')],
-    [T('총수입'), N(totalInc)], [T('총지출'), N(totalExp)],
-    [{v:'잔액',s:8},{f:'B5-B6', v:totalInc-totalExp, s:9}], [],
-    [H('카테고리'),H('건수'),H('지출액'),H('예산'),H('예산 대비'),H('지출 비중')]];
-  const cStart = sm.length+1;
-  groups.forEach(g=>{
-    const r = sm.length+1;
-    const amt = g.list.reduce((s,e)=>s+e.amount,0);
-    const budget = Number(g.info.budget)||0;
-    sm.push([T(g.info.name), {v:g.list.length, s:12}, N(amt),
-      budget ? N(budget) : T(''),
-      budget ? {f:`C${r}/D${r}`, v:amt/budget, s:10} : T(''),
-      {f: totalExp?`C${r}/$C$${cStart+groups.length}`:'0', v: totalExp? amt/totalExp : 0, s:10}]);
+  // fill 요약 / 카테고리 표 now that rows are known
+  put(5,1,{f:`E${incTotalRow}`, v:totalInc, s:4});
+  put(6,1,{f:`E${expTotalRow}`, v:totalExp, s:4});
+  put(7,1,{f:'B5-B6', v:totalInc-totalExp, s:9});
+  groups.forEach((gr,i)=>{
+    const rr = catRowStart+i, st = subtotalRow[gr.id];
+    const budget = Number(gr.info.budget)||0;
+    put(rr,3,T(gr.info.name)); put(rr,4,{v:gr.list.length, s:12});
+    put(rr,5,{f:`E${st.row}`, v:st.sum, s:4});
+    put(rr,6, budget ? N(budget) : T(''));
+    put(rr,7, budget ? {f:`F${rr}/G${rr}`, v:st.sum/budget, s:10} : T(''));
   });
-  const cEnd = sm.length;
-  sm.push([{v:'합계',s:8},{f:groups.length?`SUM(B${cStart}:B${cEnd})`:'0', v:expenses.length, s:9},
-    {f:groups.length?`SUM(C${cStart}:C${cEnd})`:'0', v:totalExp, s:9},{v:'',s:8},{v:'',s:8},{v:'',s:8}]);
+  const ct = catRowStart + groups.length;
+  put(ct,3,{v:'합계',s:8}); put(ct,4,{v:expenses.length,s:9});
+  put(ct,5,{f: groups.length?`SUM(F${catRowStart}:F${ct-1})`:'0', v:totalExp, s:9}); put(ct,6,{v:'',s:8}); put(ct,7,{v:'',s:8});
 
+  return {grid:g, totalInc, totalExp, subtotalRow, incCell:'B5', expCell:'B6'};
+}
+
+function buildWorkbook(startMonth, endMonth){
+  const months = monthRange(startMonth, endMonth);
+  const sheetName = m => m.replace('-','.');
+  // categories used anywhere in the range (app order), 미분류 last
+  const known = new Set(state.categories.map(c=>c.id));
+  const inRange = state.expenses.filter(e=>(e.type||'expense')==='expense' && months.includes(monthOf(e.date)));
+  const used = new Set(inRange.map(e=>known.has(e.category)?e.category:'__none__'));
+  const catOrder = state.categories.map(c=>c.id).filter(id=>used.has(id)).concat(used.has('__none__')?['__none__']:[]);
+  const cats = catOrder.map((id,i)=>({id, info: id==='__none__'?{name:'미분류'}:catInfo(id)}))
+                       .map((c,i)=>({...c, name:c.info.name, color:catColorHex(c.info,i)}));
+
+  const monthSheets = months.map(m=>({m, name:sheetName(m), ...buildMonthSheet(m, catOrder)}));
+
+  /* ---------- 대시보드 ---------- */
+  const DN = '대시보드';
+  const g = []; const put = (r,c,cell)=>{ (g[r-1] = g[r-1]||[])[c] = cell; };
+  const H = v=>({v, s:2}), T = v=>({v, s:12});
+  const sumInc = monthSheets.reduce((s,x)=>s+x.totalInc,0), sumExp = monthSheets.reduce((s,x)=>s+x.totalExp,0);
+
+  put(1,0,{v:'가계부 대시보드', s:1});
+  put(2,0,{v:`기간 ${sheetName(months[0])} ~ ${sheetName(months[months.length-1])} (${months.length}개월) · 내보낸 날짜 ${todayStr()} · 숫자는 월별 시트와 수식으로 연결돼 있어요`, s:11});
+
+  // 표 위치 먼저 계산 (그래프가 참조)
+  const CH_TOP = 6, CH_H = 17;                 // 그래프 2줄: 7~23행, 25~41행
+  const t1 = CH_TOP + CH_H*2 + 4;              // 월별 수입·지출 표 시작 행
+  const t1h = t1+1, t1s = t1+2, t1e = t1s + months.length - 1, t1tot = t1e + 1;
+  const t2 = t1tot + 3, t2h = t2+1, t2s = t2+2, t2e = t2s + months.length - 1, t2tot = t2e + 1;
+
+  // KPI (4~5행)
+  const kpi = [['기간 총수입', `SUM(B${t1s}:B${t1e})`, sumInc], ['기간 총지출', `SUM(C${t1s}:C${t1e})`, sumExp],
+               ['기간 잔액', `SUM(D${t1s}:D${t1e})`, sumInc-sumExp], ['월평균 지출', `AVERAGE(C${t1s}:C${t1e})`, months.length? sumExp/months.length : 0]];
+  kpi.forEach((k,i)=>{ put(4, i*2, {v:k[0], s:14}); put(4, i*2+1, {v:'', s:14}); put(5, i*2, {f:k[1], v:k[2], s:15}); put(5, i*2+1, {v:'', s:15}); });
+
+  // 표 1: 월별 수입·지출
+  put(t1,0,{v:'■ 월별 수입 · 지출', s:13});
+  ['월','수입','지출','잔액'].forEach((h,i)=>put(t1h,i,H(h)));
+  monthSheets.forEach((x,i)=>{
+    const r = t1s+i;
+    put(r,0,T(x.name));
+    put(r,1,{f:sheetRef(x.name,x.incCell), v:x.totalInc, s:4});
+    put(r,2,{f:sheetRef(x.name,x.expCell), v:x.totalExp, s:4});
+    put(r,3,{f:`B${r}-C${r}`, v:x.totalInc-x.totalExp, s:4});
+  });
+  put(t1tot,0,{v:'합계',s:8});
+  put(t1tot,1,{f:`SUM(B${t1s}:B${t1e})`, v:sumInc, s:9}); put(t1tot,2,{f:`SUM(C${t1s}:C${t1e})`, v:sumExp, s:9}); put(t1tot,3,{f:`SUM(D${t1s}:D${t1e})`, v:sumInc-sumExp, s:9});
+
+  // 표 2: 월별 카테고리 지출
+  put(t2,0,{v:'■ 월별 카테고리별 지출', s:13});
+  put(t2h,0,H('월')); cats.forEach((c,i)=>put(t2h,1+i,H(c.name))); put(t2h,1+cats.length,H('합계'));
+  const catTotals = cats.map(()=>0);
+  monthSheets.forEach((x,mi)=>{
+    const r = t2s+mi; put(r,0,T(x.name));
+    let rowSum = 0;
+    cats.forEach((c,ci)=>{
+      const st = x.subtotalRow[c.id];
+      if(st){ put(r,1+ci,{f:sheetRef(x.name,'E'+st.row), v:st.sum, s:4}); rowSum+=st.sum; catTotals[ci]+=st.sum; }
+      else put(r,1+ci,{v:0, s:4});
+    });
+    put(r,1+cats.length,{f: cats.length?`SUM(B${r}:${xlsxCol(cats.length)}${r})`:'0', v:rowSum, s:7});
+  });
+  put(t2tot,0,{v:'합계',s:8});
+  cats.forEach((c,ci)=>{ const col=xlsxCol(1+ci); put(t2tot,1+ci,{f:`SUM(${col}${t2s}:${col}${t2e})`, v:catTotals[ci], s:9}); });
+  put(t2tot,1+cats.length,{f: cats.length?`SUM(B${t2tot}:${xlsxCol(cats.length)}${t2tot})`:'0', v:sumExp, s:9});
+
+  /* ---------- 그래프 ---------- */
+  const monthNames = monthSheets.map(x=>x.name);
+  const charts = [];
+  charts.push({from:[0,CH_TOP], to:[8,CH_TOP+CH_H], xml: chartBar({
+    title:'월별 수입 · 지출',
+    cat:{ref:sheetRef(DN,`$A$${t1s}:$A$${t1e}`), vals:monthNames},
+    bars:[
+      {name:'수입', nameRef:sheetRef(DN,'$B$'+t1h), ref:sheetRef(DN,`$B$${t1s}:$B$${t1e}`), vals:monthSheets.map(x=>x.totalInc), color:'3E7D5C'},
+      {name:'지출', nameRef:sheetRef(DN,'$C$'+t1h), ref:sheetRef(DN,`$C$${t1s}:$C$${t1e}`), vals:monthSheets.map(x=>x.totalExp), color:'D97757'},
+    ],
+    lines:[{name:'잔액', nameRef:sheetRef(DN,'$D$'+t1h), ref:sheetRef(DN,`$D$${t1s}:$D$${t1e}`), vals:monthSheets.map(x=>x.totalInc-x.totalExp), color:'1F2A44'}],
+  })});
+  if(cats.length){
+    charts.push({from:[8,CH_TOP], to:[16,CH_TOP+CH_H], xml: chartBar({
+      title:'월별 카테고리별 지출', stacked:true,
+      cat:{ref:sheetRef(DN,`$A$${t2s}:$A$${t2e}`), vals:monthNames},
+      bars: cats.map((c,ci)=>{ const col=xlsxCol(1+ci);
+        return {name:c.name, nameRef:sheetRef(DN,`$${col}$${t2h}`), ref:sheetRef(DN,`$${col}$${t2s}:$${col}$${t2e}`),
+                vals:monthSheets.map(x=>(x.subtotalRow[c.id]||{}).sum||0), color:c.color}; }),
+    })});
+    // 최근 지출이 있는 달의 비중
+    let li = monthSheets.length-1; while(li>0 && monthSheets[li].totalExp===0) li--;
+    const lr = t2s+li, lastCol = xlsxCol(cats.length);
+    charts.push({from:[0,CH_TOP+CH_H+1], to:[8,CH_TOP+CH_H*2+1], xml: chartPie({
+      title:`${monthSheets[li].name} 카테고리별 지출 비중`,
+      cat:{ref:sheetRef(DN,`$B$${t2h}:$${lastCol}$${t2h}`), vals:cats.map(c=>c.name)},
+      ser:{name:monthSheets[li].name, nameRef:sheetRef(DN,'$A$'+lr), ref:sheetRef(DN,`$B$${lr}:$${lastCol}$${lr}`),
+           vals:cats.map(c=>(monthSheets[li].subtotalRow[c.id]||{}).sum||0)},
+      colors: cats.map(c=>c.color),
+    })});
+    charts.push({from:[8,CH_TOP+CH_H+1], to:[16,CH_TOP+CH_H*2+1], xml: chartBar({
+      title:'기간 누적 카테고리별 지출', horizontal:true, legend:false,
+      cat:{ref:sheetRef(DN,`$B$${t2h}:$${lastCol}$${t2h}`), vals:cats.map(c=>c.name)},
+      bars:[{name:'누적 지출', nameRef:sheetRef(DN,'$A$'+t2tot), ref:sheetRef(DN,`$B$${t2tot}:$${lastCol}$${t2tot}`), vals:catTotals, color:'5B8DB8'}],
+    })});
+  }
+
+  const dashWidths = [12].concat(Array(Math.max(16, cats.length+2)).fill(12.5));
   return xlsxWorkbook([
-    {name:'요약', xml:xlsxSheet(sm, {widths:[16,9,15,15,11,11], titleRow:1})},
-    {name:'지출', xml:xlsxSheet(ex, {widths:[12,14,28,14,14], freezeRow:3, titleRow:1})},
-    {name:'수입', xml:xlsxSheet(inc, {widths:[12,30,14], freezeRow:3, titleRow:1})},
+    {name:DN, xml:xlsxSheet(g, {widths:dashWidths, heights:{1:28, 4:20, 5:34}, showGrid:false, drawing:charts.length>0, selected:true, tabColor:'1F2A44', fit:'landscape',
+      merges:[0,2,4,6].flatMap(c=>[`${xlsxCol(c)}4:${xlsxCol(c+1)}4`, `${xlsxCol(c)}5:${xlsxCol(c+1)}5`])}), charts},
+    ...monthSheets.map(x=>({name:x.name, xml:xlsxSheet(x.grid, {widths:[12,14,26,14,14,13,14,11], heights:{1:26}, fit:'portrait'})})),
   ]);
 }
-async function exportMonthExcel(){
-  const monthStr = document.getElementById('excelMonth').value || state.currentMonth;
-  if(monthExpenses(monthStr).length===0){
-    if(!confirm(`${monthStr.replace('-','년 ')}월에는 내역이 없어요. 빈 파일이라도 받을까요?`)) return;
-  }
-  const blob = buildMonthWorkbook(monthStr);
-  const [yy,mm] = monthStr.split('-');
-  const fileName = `가계부_${yy}년${mm}월.xlsx`;
+
+function excelDefaultStart(){
+  const months = state.expenses.map(e=>monthOf(e.date)).filter(m=>m<=state.currentMonth).sort();
+  return months[0] || state.currentMonth;
+}
+async function exportExcel(){
+  let start = document.getElementById('excelStart').value || excelDefaultStart();
+  let end = document.getElementById('excelEnd').value || state.currentMonth;
+  if(start > end){ const t=start; start=end; end=t; }
+  if(monthRange(start,end).length > 60){ alert('한 번에 최대 60개월까지 받을 수 있어요'); return; }
+  const blob = buildWorkbook(start, end);
+  const fileName = start===end ? `가계부_${start.replace('-','.')}.xlsx` : `가계부_${start.replace('-','.')}-${end.replace('-','.')}.xlsx`;
   // 폰에서는 공유창(파일에 저장 · 카톡 등)으로, PC에서는 바로 다운로드
   try{
     const file = new File([blob], fileName, {type: blob.type});
@@ -1820,8 +2051,9 @@ async function exportMonthExcel(){
   setTimeout(()=>URL.revokeObjectURL(url), 2000);
 }
 function syncExcelMonth(){
-  const el = document.getElementById('excelMonth');
-  if(el) el.value = state.currentMonth;
+  const s = document.getElementById('excelStart'), e = document.getElementById('excelEnd');
+  if(s && !s.value) s.value = excelDefaultStart();
+  if(e && !e.value) e.value = state.currentMonth;
 }
 
 /* ============ EXPORT / IMPORT ============ */
